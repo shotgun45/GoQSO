@@ -37,21 +37,6 @@ func TestFrequencyToBand(t *testing.T) {
 	}
 }
 
-func TestQSOLoggerCreation(t *testing.T) {
-	// Test creating a QSOLogger struct
-	logger := &QSOLogger{
-		Contacts: make([]Contact, 0),
-	}
-
-	if logger.Contacts == nil {
-		t.Error("Contacts slice should be initialized")
-	}
-
-	if len(logger.Contacts) != 0 {
-		t.Errorf("Expected empty contacts slice, got length %d", len(logger.Contacts))
-	}
-}
-
 func TestContactStructure(t *testing.T) {
 	// Test creating a Contact with all fields
 	testTime := time.Date(2025, 9, 20, 14, 30, 0, 0, time.UTC)
@@ -133,73 +118,6 @@ func TestContactStructure(t *testing.T) {
 
 	if contact.Confirmed != false {
 		t.Errorf("Expected confirmed false, got %t", contact.Confirmed)
-	}
-}
-
-func TestQSOLoggerOperations(t *testing.T) {
-	logger := &QSOLogger{
-		Contacts: make([]Contact, 0),
-	}
-
-	// Test empty logger
-	if len(logger.Contacts) != 0 {
-		t.Errorf("Expected 0 contacts, got %d", len(logger.Contacts))
-	}
-
-	// Add a test contact
-	testContact := Contact{
-		Callsign:    "TEST",
-		Date:        time.Date(2025, 9, 20, 15, 0, 0, 0, time.UTC),
-		Frequency:   14.205,
-		Band:        "20m",
-		Mode:        "SSB",
-		RSTSent:     "599",
-		RSTReceived: "579",
-	}
-
-	logger.Contacts = append(logger.Contacts, testContact)
-
-	// Test after adding contact
-	if len(logger.Contacts) != 1 {
-		t.Errorf("Expected 1 contact after adding, got %d", len(logger.Contacts))
-	}
-
-	if logger.Contacts[0].Callsign != "TEST" {
-		t.Errorf("Expected callsign TEST, got %s", logger.Contacts[0].Callsign)
-	}
-
-	if logger.Contacts[0].Mode != "SSB" {
-		t.Errorf("Expected mode SSB, got %s", logger.Contacts[0].Mode)
-	}
-
-	// Add another contact
-	secondContact := Contact{
-		Callsign:  "TEST2",
-		Date:      time.Date(2025, 9, 20, 16, 0, 0, 0, time.UTC),
-		Frequency: 7.125,
-		Band:      "40m",
-		Mode:      "CW",
-	}
-
-	logger.Contacts = append(logger.Contacts, secondContact)
-
-	// Test multiple contacts
-	if len(logger.Contacts) != 2 {
-		t.Errorf("Expected 2 contacts after adding second, got %d", len(logger.Contacts))
-	}
-
-	// Verify both contacts are present
-	callsigns := make(map[string]bool)
-	for _, contact := range logger.Contacts {
-		callsigns[contact.Callsign] = true
-	}
-
-	if !callsigns["TEST"] {
-		t.Error("First contact (TEST) not found in logger")
-	}
-
-	if !callsigns["TEST2"] {
-		t.Error("Second contact (TEST2) not found in logger")
 	}
 }
 
