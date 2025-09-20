@@ -15,8 +15,10 @@ linters-settings:
   goimports:
     local-prefixes: goqso
   govet:
-    # check-shadowing is deprecated, use shadow linter instead
     enable-all: true
+    settings:
+      shadow:
+        strict: true
   gocyclo:
     min-complexity: 15
   dupl:
@@ -40,10 +42,7 @@ linters:
     - staticcheck
     - unused
     - typecheck
-    - shadow      # replacement for govet check-shadowing
-  disable:
-    - maligned    # deprecated
-    - interfacer  # deprecated
+  disable: []
 
 issues:
   exclude-rules:

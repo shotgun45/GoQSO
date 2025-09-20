@@ -43,7 +43,7 @@ jobs:
       uses: golangci/golangci-lint-action@v4
       with:
         version: v1.61.0
-        args: --timeout=5m --config=.golangci.yml --out-format=colored-line-number
+        args: --timeout=5m --config=.golangci.yml
 
   test:
     name: Run Tests

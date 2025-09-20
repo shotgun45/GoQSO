@@ -2,62 +2,49 @@ name: CI
 
 on:
   pull_request:
-    branches: [ main ]
-  push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  lint:
-    name: Lint
+  tests:
+    name: Tests
     runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-    
-    - name: golangci-lint
-      uses: golangci/golangci-lint-action@v4
-      with:
-        version: v1.61.0
-        args: --timeout=5m --out-format=colored-line-number
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
-    
-    - name: Run tests
-      run: go test -v -race -coverprofile=coverage.out ./...
-    
-    - name: Upload coverage reports to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.out
-        flags: unittests
-        name: codecov-umbrella
+      - name: Check out code
+        uses: actions/checkout@v4
 
-  build:
-    name: Build
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.0"
+
+      - name: Run unit tests
+        run: go test --cover ./...
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec security checks
+        run: gosec ./...
+
+  style:
+    name: Style
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.25.1'
-    
-    - name: Build
-      run: go build -v ./...
-    
-    - name: Build binary
-      run: go build -o goqso *.go
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.0"
+
+      - name: Run gofmt
+        run: test -z $(go fmt ./...)
+
+      - name: Run Staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          working-directory: .
