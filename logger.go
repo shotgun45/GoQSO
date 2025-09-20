@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -433,7 +434,14 @@ func (q *QSOLogger) ExportADIF() {
 
 	filename := fmt.Sprintf("goqso_export_%s.adi", time.Now().Format("20060102_150405"))
 
-	file, err := os.Create(filename)
+	// Validate filename to prevent path traversal (security fix G304)
+	cleanedFilename := filepath.Clean(filename)
+	if strings.Contains(cleanedFilename, "..") || strings.ContainsAny(cleanedFilename, "/\\") || cleanedFilename != filename {
+		fmt.Println("Error: Invalid filename generated")
+		return
+	}
+
+	file, err := os.Create(cleanedFilename)
 	if err != nil {
 		fmt.Printf("Error creating ADIF file: %v\n", err)
 		return
@@ -446,7 +454,10 @@ func (q *QSOLogger) ExportADIF() {
 	header += fmt.Sprintf("Total QSOs: %d\n", len(contacts))
 	header += "<EOH>\n\n"
 
-	file.WriteString(header)
+	if _, err := file.WriteString(header); err != nil {
+		fmt.Printf("Error writing ADIF header: %v\n", err)
+		return
+	}
 
 	// Export each contact
 	for _, contact := range contacts {
@@ -514,8 +525,11 @@ func (q *QSOLogger) ExportADIF() {
 		}
 
 		adifRecord += "<EOR>\n"
-		file.WriteString(adifRecord)
+		if _, err := file.WriteString(adifRecord); err != nil {
+			fmt.Printf("Error writing contact record: %v\n", err)
+			return
+		}
 	}
 
-	fmt.Printf("\nSuccessfully exported %d QSOs to %s\n", len(contacts), filename)
+	fmt.Printf("\nSuccessfully exported %d QSOs to %s\n", len(contacts), cleanedFilename)
 }
