@@ -299,19 +299,26 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 func sendSuccess(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(APIResponse{
+	if err := json.NewEncoder(w).Encode(APIResponse{
 		Success: true,
 		Data:    data,
-	})
+	}); err != nil {
+		log.Printf("Failed to encode success response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }
 
 func sendError(w http.ResponseWriter, message string, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(APIResponse{
+	if err := json.NewEncoder(w).Encode(APIResponse{
 		Success: false,
 		Error:   message,
-	})
+	}); err != nil {
+		log.Printf("Failed to encode error response: %v", err)
+		// Can't call http.Error here since WriteHeader was already called
+		// Just log the error - the client will get the status code at least
+	}
 }
 
 func startServer() {
