@@ -9,8 +9,7 @@ import (
 )
 
 const (
-	dataFile = "qso_log.json"
-	version  = "1.0.0"
+	version = "1.0.0"
 )
 
 // Contact represents an amateur radio QSO (contact)

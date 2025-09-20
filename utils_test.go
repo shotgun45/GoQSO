@@ -64,6 +64,10 @@ func TestContactStructure(t *testing.T) {
 		t.Errorf("Expected callsign W1AW, got %s", contact.Callsign)
 	}
 
+	if !contact.Date.Equal(testTime) {
+		t.Errorf("Expected date %v, got %v", testTime, contact.Date)
+	}
+
 	if contact.Band != "20m" {
 		t.Errorf("Expected band 20m, got %s", contact.Band)
 	}
