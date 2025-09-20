@@ -59,3 +59,23 @@ func frequencyToBand(freq float64) string {
 		return "Unknown"
 	}
 }
+
+// printHelp displays usage information
+func printHelp() {
+	fmt.Printf("GoQSO - Amateur Radio Contact Logger v%s\n", version)
+	fmt.Println("Usage:")
+	fmt.Println("  goqso                    Start interactive QSO logger")
+	fmt.Println("  goqso migrate up         Run pending database migrations")
+	fmt.Println("  goqso migrate down       Rollback last migration")
+	fmt.Println("  goqso migrate status     Show migration status")
+	fmt.Println("  goqso db check           Test database connection")
+	fmt.Println("  goqso help               Show this help message")
+	fmt.Println()
+	fmt.Println("Environment Variables:")
+	fmt.Println("  POSTGRES_HOST            PostgreSQL host (default: localhost)")
+	fmt.Println("  POSTGRES_PORT            PostgreSQL port (default: 5432)")
+	fmt.Println("  POSTGRES_USER            PostgreSQL username (default: postgres)")
+	fmt.Println("  POSTGRES_PASSWORD        PostgreSQL password")
+	fmt.Println("  POSTGRES_DB              PostgreSQL database name (default: goqso)")
+	fmt.Println("  POSTGRES_SSLMODE         PostgreSQL SSL mode (default: disable)")
+}
