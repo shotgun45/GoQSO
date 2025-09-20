@@ -68,8 +68,8 @@ func TestContactDatabaseOperations(t *testing.T) {
 	contact := Contact{
 		Callsign:    "W1AW",
 		Date:        time.Date(2025, 9, 20, 12, 0, 0, 0, time.UTC),
-		TimeOn:      "1200",
-		TimeOff:     "1210",
+		TimeOn:      "12:00:00", // Updated to HH:MM:SS format
+		TimeOff:     "12:10:00", // Updated to HH:MM:SS format
 		Frequency:   14.205,
 		Band:        "20m",
 		Mode:        "SSB",
@@ -302,4 +302,345 @@ func containsAt(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// Tests for API methods used by HTTP server
+
+func TestGetAllContactsAPI(t *testing.T) {
+	db := setupTestDB(t)
+	defer teardownTestDB(t, db)
+
+	logger := &QSOLogger{db: db}
+
+	// Initially should return empty slice
+	contacts, err := logger.GetAllContacts()
+	if err != nil {
+		t.Fatalf("GetAllContacts failed: %v", err)
+	}
+
+	if len(contacts) != 0 {
+		t.Errorf("Expected 0 contacts, got %d", len(contacts))
+	}
+
+	// Add a test contact
+	testContact := Contact{
+		Callsign:    "W1AW",
+		Date:        time.Date(2025, 9, 20, 12, 0, 0, 0, time.UTC),
+		TimeOn:      "12:00:00",
+		TimeOff:     "12:10:00",
+		Frequency:   14.205,
+		Band:        "20m",
+		Mode:        "SSB",
+		RSTSent:     "599",
+		RSTReceived: "589",
+		Name:        "John",
+		QTH:         "Connecticut",
+		Country:     "USA",
+		Grid:        "FN31",
+		Power:       100,
+		Comment:     "Test QSO",
+		Confirmed:   false,
+	}
+
+	err = logger.SaveContact(&testContact)
+	if err != nil {
+		t.Fatalf("Failed to save test contact: %v", err)
+	}
+
+	// Test GetAllContacts returns the contact
+	contacts, err = logger.GetAllContacts()
+	if err != nil {
+		t.Fatalf("GetAllContacts failed: %v", err)
+	}
+
+	if len(contacts) != 1 {
+		t.Errorf("Expected 1 contact, got %d", len(contacts))
+	}
+
+	if contacts[0].Callsign != "W1AW" {
+		t.Errorf("Expected callsign W1AW, got %s", contacts[0].Callsign)
+	}
+}
+
+func TestAddContactStructAPI(t *testing.T) {
+	db := setupTestDB(t)
+	defer teardownTestDB(t, db)
+
+	logger := &QSOLogger{db: db}
+
+	testContact := Contact{
+		Callsign:    "VE1TEST",
+		Date:        time.Date(2025, 9, 20, 15, 30, 0, 0, time.UTC),
+		TimeOn:      "15:30:00",
+		TimeOff:     "15:45:00",
+		Frequency:   7.125,
+		Band:        "40m",
+		Mode:        "CW",
+		RSTSent:     "579",
+		RSTReceived: "559",
+		Name:        "Jane",
+		QTH:         "Halifax, NS",
+		Country:     "Canada",
+		Grid:        "FN85",
+		Power:       50,
+		Comment:     "Great CW QSO",
+		Confirmed:   true,
+	}
+
+	// Test AddContactStruct
+	err := logger.AddContactStruct(testContact)
+	if err != nil {
+		t.Fatalf("AddContactStruct failed: %v", err)
+	}
+
+	// Verify contact was saved
+	contacts, err := logger.GetAllContacts()
+	if err != nil {
+		t.Fatalf("GetAllContacts failed: %v", err)
+	}
+
+	if len(contacts) != 1 {
+		t.Errorf("Expected 1 contact, got %d", len(contacts))
+	}
+
+	saved := contacts[0]
+	if saved.Callsign != testContact.Callsign {
+		t.Errorf("Expected callsign %s, got %s", testContact.Callsign, saved.Callsign)
+	}
+
+	if saved.Mode != testContact.Mode {
+		t.Errorf("Expected mode %s, got %s", testContact.Mode, saved.Mode)
+	}
+
+	if saved.Country != testContact.Country {
+		t.Errorf("Expected country %s, got %s", testContact.Country, saved.Country)
+	}
+
+	if saved.Confirmed != testContact.Confirmed {
+		t.Errorf("Expected confirmed %t, got %t", testContact.Confirmed, saved.Confirmed)
+	}
+}
+
+func TestGetContactByIDAPI(t *testing.T) {
+	db := setupTestDB(t)
+	defer teardownTestDB(t, db)
+
+	logger := &QSOLogger{db: db}
+
+	// Test getting non-existent contact
+	contact, err := logger.GetContactByID(999)
+	if err == nil {
+		t.Error("Expected error for non-existent contact")
+	}
+	if contact != nil {
+		t.Error("Expected nil contact for non-existent ID")
+	}
+
+	// Add a test contact
+	testContact := Contact{
+		Callsign:    "JA1TEST",
+		Date:        time.Date(2025, 9, 20, 10, 0, 0, 0, time.UTC),
+		TimeOn:      "10:00:00",
+		TimeOff:     "10:05:00",
+		Frequency:   21.205,
+		Band:        "15m",
+		Mode:        "FT8",
+		RSTSent:     "-10",
+		RSTReceived: "-15",
+		Name:        "Taro",
+		QTH:         "Tokyo",
+		Country:     "Japan",
+		Grid:        "PM95",
+		Power:       10,
+		Comment:     "FT8 digital mode",
+		Confirmed:   false,
+	}
+
+	err = logger.SaveContact(&testContact)
+	if err != nil {
+		t.Fatalf("Failed to save test contact: %v", err)
+	}
+
+	// Test getting existing contact
+	retrieved, err := logger.GetContactByID(testContact.ID)
+	if err != nil {
+		t.Fatalf("GetContactByID failed: %v", err)
+	}
+
+	if retrieved == nil {
+		t.Fatal("Expected contact, got nil")
+	}
+
+	if retrieved.Callsign != testContact.Callsign {
+		t.Errorf("Expected callsign %s, got %s", testContact.Callsign, retrieved.Callsign)
+	}
+
+	if retrieved.Mode != testContact.Mode {
+		t.Errorf("Expected mode %s, got %s", testContact.Mode, retrieved.Mode)
+	}
+
+	if retrieved.Grid != testContact.Grid {
+		t.Errorf("Expected grid %s, got %s", testContact.Grid, retrieved.Grid)
+	}
+
+	if retrieved.ID != testContact.ID {
+		t.Errorf("Expected ID %d, got %d", testContact.ID, retrieved.ID)
+	}
+}
+
+func TestUpdateContactAPI(t *testing.T) {
+	db := setupTestDB(t)
+	defer teardownTestDB(t, db)
+
+	logger := &QSOLogger{db: db}
+
+	// Add a test contact to update
+	originalContact := Contact{
+		Callsign:    "G0TEST",
+		Date:        time.Date(2025, 9, 20, 16, 0, 0, 0, time.UTC),
+		TimeOn:      "16:00:00",
+		TimeOff:     "16:15:00",
+		Frequency:   28.405,
+		Band:        "10m",
+		Mode:        "SSB",
+		RSTSent:     "599",
+		RSTReceived: "599",
+		Name:        "Robert",
+		QTH:         "London",
+		Country:     "England",
+		Grid:        "IO91",
+		Power:       100,
+		Comment:     "Good signal",
+		Confirmed:   false,
+	}
+
+	err := logger.SaveContact(&originalContact)
+	if err != nil {
+		t.Fatalf("Failed to save original contact: %v", err)
+	}
+
+	// Update the contact
+	updatedContact := originalContact
+	updatedContact.Name = "Bob"
+	updatedContact.QTH = "Manchester"
+	updatedContact.Power = 250
+	updatedContact.Confirmed = true
+	updatedContact.Comment = "Updated QSO details"
+	updatedContact.UpdatedAt = time.Now()
+
+	err = logger.UpdateContact(updatedContact)
+	if err != nil {
+		t.Fatalf("UpdateContact failed: %v", err)
+	}
+
+	// Retrieve and verify updates
+	retrieved, err := logger.GetContactByID(originalContact.ID)
+	if err != nil {
+		t.Fatalf("Failed to retrieve updated contact: %v", err)
+	}
+
+	if retrieved.Name != "Bob" {
+		t.Errorf("Expected updated name Bob, got %s", retrieved.Name)
+	}
+
+	if retrieved.QTH != "Manchester" {
+		t.Errorf("Expected updated QTH Manchester, got %s", retrieved.QTH)
+	}
+
+	if retrieved.Power != 250 {
+		t.Errorf("Expected updated power 250, got %d", retrieved.Power)
+	}
+
+	if retrieved.Confirmed != true {
+		t.Errorf("Expected confirmed true, got %t", retrieved.Confirmed)
+	}
+
+	if retrieved.Comment != "Updated QSO details" {
+		t.Errorf("Expected updated comment, got %s", retrieved.Comment)
+	}
+
+	// Test updating non-existent contact
+	nonExistentContact := Contact{
+		ID:       999,
+		Callsign: "FAKE",
+	}
+
+	err = logger.UpdateContact(nonExistentContact)
+	if err == nil {
+		t.Error("Expected error when updating non-existent contact")
+	}
+}
+
+func TestDeleteContactAPI(t *testing.T) {
+	db := setupTestDB(t)
+	defer teardownTestDB(t, db)
+
+	logger := &QSOLogger{db: db}
+
+	// Test deleting non-existent contact
+	err := logger.DeleteContact(999)
+	if err == nil {
+		t.Error("Expected error when deleting non-existent contact")
+	}
+
+	// Add test contacts
+	contacts := []Contact{
+		{
+			Callsign: "DELETE1",
+			Date:     time.Date(2025, 9, 20, 12, 0, 0, 0, time.UTC),
+			Mode:     "SSB",
+			Band:     "20m",
+		},
+		{
+			Callsign: "DELETE2",
+			Date:     time.Date(2025, 9, 20, 13, 0, 0, 0, time.UTC),
+			Mode:     "CW",
+			Band:     "40m",
+		},
+	}
+
+	for i := range contacts {
+		err := logger.SaveContact(&contacts[i])
+		if err != nil {
+			t.Fatalf("Failed to save test contact %d: %v", i, err)
+		}
+	}
+
+	// Verify we have 2 contacts
+	allContacts, err := logger.GetAllContacts()
+	if err != nil {
+		t.Fatalf("GetAllContacts failed: %v", err)
+	}
+	if len(allContacts) != 2 {
+		t.Errorf("Expected 2 contacts before deletion, got %d", len(allContacts))
+	}
+
+	// Delete first contact
+	err = logger.DeleteContact(contacts[0].ID)
+	if err != nil {
+		t.Fatalf("DeleteContact failed: %v", err)
+	}
+
+	// Verify we now have 1 contact
+	allContacts, err = logger.GetAllContacts()
+	if err != nil {
+		t.Fatalf("GetAllContacts failed: %v", err)
+	}
+	if len(allContacts) != 1 {
+		t.Errorf("Expected 1 contact after deletion, got %d", len(allContacts))
+	}
+
+	// Verify the remaining contact is the right one
+	if allContacts[0].Callsign != "DELETE2" {
+		t.Errorf("Expected remaining contact DELETE2, got %s", allContacts[0].Callsign)
+	}
+
+	// Try to get the deleted contact
+	deleted, err := logger.GetContactByID(contacts[0].ID)
+	if err == nil {
+		t.Error("Expected error when getting deleted contact")
+	}
+	if deleted != nil {
+		t.Error("Expected nil when getting deleted contact")
+	}
 }

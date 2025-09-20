@@ -3,10 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
+	"io"
 	"strings"
 	"time"
 )
@@ -37,6 +34,17 @@ type Contact struct {
 	Confirmed   bool      `db:"confirmed"` // QSL confirmed
 	CreatedAt   time.Time `db:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at"`
+}
+
+// Statistics represents QSO statistics
+type Statistics struct {
+	TotalQSOs       int            `json:"total_qsos"`
+	UniqueCallsigns int            `json:"unique_callsigns"`
+	UniqueCountries int            `json:"unique_countries"`
+	ConfirmedQSOs   int            `json:"confirmed_qsos"`
+	QSOsByBand      map[string]int `json:"qsos_by_band"`
+	QSOsByMode      map[string]int `json:"qsos_by_mode"`
+	QSOsByCountry   map[string]int `json:"qsos_by_country"`
 }
 
 // QSOLogger manages the collection of amateur radio contacts using PostgreSQL
@@ -131,124 +139,199 @@ func (q *QSOLogger) SaveContact(contact *Contact) error {
 	return nil
 }
 
-// AddContact prompts user for QSO details and adds to database
-func (q *QSOLogger) AddContact() {
-	fmt.Println("\n=== ADD NEW QSO ===")
+// API Methods for HTTP server
 
-	contact := Contact{
-		Date: time.Now(),
-	}
-
-	// Required fields
-	contact.Callsign = strings.ToUpper(getUserInput("Callsign: "))
-	if contact.Callsign == "" {
-		fmt.Println("Callsign is required!")
-		return
-	}
-
-	// Frequency and band
-	freqStr := getUserInput("Frequency (MHz): ")
-	if freq, err := strconv.ParseFloat(freqStr, 64); err == nil {
-		contact.Frequency = freq
-		contact.Band = frequencyToBand(freq)
-	}
-
-	// Mode
-	contact.Mode = strings.ToUpper(getUserInput("Mode (SSB/CW/FT8/FT4/PSK31/RTTY): "))
-	if contact.Mode == "" {
-		contact.Mode = "SSB"
-	}
-
-	// Time
-	contact.TimeOn = getUserInput("Time ON (HHMM UTC, press Enter for current): ")
-	if contact.TimeOn == "" {
-		contact.TimeOn = time.Now().UTC().Format("1504")
-	}
-
-	contact.TimeOff = getUserInput("Time OFF (HHMM UTC, press Enter for current): ")
-	if contact.TimeOff == "" {
-		contact.TimeOff = time.Now().UTC().Format("1504")
-	}
-
-	// Signal reports
-	contact.RSTSent = getUserInput("RST Sent (e.g., 599): ")
-	contact.RSTReceived = getUserInput("RST Received (e.g., 599): ")
-
-	// Optional fields
-	contact.Name = getUserInput("Name: ")
-	contact.QTH = getUserInput("QTH (Location): ")
-	contact.Country = getUserInput("Country: ")
-	contact.Grid = strings.ToUpper(getUserInput("Grid Square: "))
-
-	powerStr := getUserInput("Power (Watts): ")
-	if power, err := strconv.Atoi(powerStr); err == nil {
-		contact.Power = power
-	}
-
-	contact.Comment = getUserInput("Comment: ")
-
-	// Save to database
-	if err := q.SaveContact(&contact); err != nil {
-		fmt.Printf("Error saving contact: %v\n", err)
-		return
-	}
-
-	fmt.Printf("\nQSO with %s added successfully! (ID: %d)\n", contact.Callsign, contact.ID)
+// GetAllContacts returns all contacts from the database
+func (q *QSOLogger) GetAllContacts() ([]Contact, error) {
+	return q.LoadContacts()
 }
 
-// ListContacts displays all QSOs from the database
-func (q *QSOLogger) ListContacts() {
-	contacts, err := q.LoadContacts()
+// AddContactStruct adds a contact using a Contact struct
+func (q *QSOLogger) AddContactStruct(contact Contact) error {
+	return q.SaveContact(&contact)
+}
+
+// DeleteContact deletes a contact by ID
+func (q *QSOLogger) DeleteContact(id int) error {
+	query := `DELETE FROM contacts WHERE id = $1`
+	result, err := q.db.Exec(query, id)
 	if err != nil {
-		fmt.Printf("Error loading contacts: %v\n", err)
-		return
+		return fmt.Errorf("failed to delete contact: %w", err)
 	}
 
-	if len(contacts) == 0 {
-		fmt.Println("\nNo QSOs found in database.")
-		return
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	fmt.Printf("\n=== QSO LOG (%d contacts) ===\n", len(contacts))
-	fmt.Println("Date       Time  Callsign     Freq     Band  Mode  RST S/R  Name")
-	fmt.Println("--------------------------------------------------------------------")
-
-	// Contacts are already sorted by date DESC from LoadContacts query
-	for _, contact := range contacts {
-		fmt.Printf("%-10s %-5s %-12s %8.3f %-5s %-5s %-7s %s\n",
-			contact.Date.Format("2006-01-02"),
-			contact.TimeOn,
-			contact.Callsign,
-			contact.Frequency,
-			contact.Band,
-			contact.Mode,
-			contact.RSTSent+"/"+contact.RSTReceived,
-			contact.Name)
+	if rowsAffected == 0 {
+		return fmt.Errorf("contact with ID %d not found", id)
 	}
+
+	return nil
 }
 
-// SearchContacts allows searching for specific QSOs by callsign
-func (q *QSOLogger) SearchContacts() {
-	fmt.Println("\n=== SEARCH QSOs ===")
-	searchTerm := strings.ToUpper(getUserInput("Enter callsign or partial callsign: "))
-
-	if searchTerm == "" {
-		return
-	}
-
+// GetContactByID retrieves a contact by its ID
+func (q *QSOLogger) GetContactByID(id int) (*Contact, error) {
 	query := `
 		SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode,
 		       rst_sent, rst_received, operator_name, qth, country, grid_square,
 		       power_watts, comment, confirmed, created_at, updated_at
 		FROM contacts
-		WHERE UPPER(callsign) LIKE $1
-		ORDER BY contact_date DESC, time_on DESC
+		WHERE id = $1
 	`
 
-	rows, err := q.db.Query(query, "%"+searchTerm+"%")
+	var contact Contact
+	err := q.db.QueryRow(query, id).Scan(
+		&contact.ID,
+		&contact.Callsign,
+		&contact.Date,
+		&contact.TimeOn,
+		&contact.TimeOff,
+		&contact.Frequency,
+		&contact.Band,
+		&contact.Mode,
+		&contact.RSTSent,
+		&contact.RSTReceived,
+		&contact.Name,
+		&contact.QTH,
+		&contact.Country,
+		&contact.Grid,
+		&contact.Power,
+		&contact.Comment,
+		&contact.Confirmed,
+		&contact.CreatedAt,
+		&contact.UpdatedAt,
+	)
+
 	if err != nil {
-		fmt.Printf("Error searching contacts: %v\n", err)
-		return
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("contact with ID %d not found", id)
+		}
+		return nil, fmt.Errorf("failed to get contact: %w", err)
+	}
+
+	return &contact, nil
+}
+
+// UpdateContact updates an existing contact
+func (q *QSOLogger) UpdateContact(contact Contact) error {
+	query := `
+		UPDATE contacts 
+		SET callsign = $1, contact_date = $2, time_on = $3, time_off = $4, frequency = $5,
+		    band = $6, mode = $7, rst_sent = $8, rst_received = $9, operator_name = $10,
+		    qth = $11, country = $12, grid_square = $13, power_watts = $14, comment = $15,
+		    confirmed = $16, updated_at = $17
+		WHERE id = $18
+	`
+
+	result, err := q.db.Exec(query,
+		contact.Callsign,
+		contact.Date,
+		contact.TimeOn,
+		contact.TimeOff,
+		contact.Frequency,
+		contact.Band,
+		contact.Mode,
+		contact.RSTSent,
+		contact.RSTReceived,
+		contact.Name,
+		contact.QTH,
+		contact.Country,
+		contact.Grid,
+		contact.Power,
+		contact.Comment,
+		contact.Confirmed,
+		contact.UpdatedAt,
+		contact.ID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update contact: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("contact with ID %d not found", contact.ID)
+	}
+
+	return nil
+}
+
+// SearchContactsAPI performs search with API filters
+func (q *QSOLogger) SearchContactsAPI(filters SearchRequest) ([]Contact, error) {
+	query := `
+		SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode,
+		       rst_sent, rst_received, operator_name, qth, country, grid_square,
+		       power_watts, comment, confirmed, created_at, updated_at
+		FROM contacts
+		WHERE 1=1
+	`
+	args := []interface{}{}
+	argCount := 0
+
+	// Build dynamic WHERE clause
+	if filters.Search != "" {
+		argCount++
+		query += fmt.Sprintf(" AND (LOWER(callsign) LIKE LOWER($%d) OR LOWER(operator_name) LIKE LOWER($%d) OR LOWER(qth) LIKE LOWER($%d) OR LOWER(country) LIKE LOWER($%d))", argCount, argCount, argCount, argCount)
+		args = append(args, "%"+filters.Search+"%")
+	}
+
+	if filters.DateFrom != "" {
+		argCount++
+		query += fmt.Sprintf(" AND contact_date >= $%d", argCount)
+		args = append(args, filters.DateFrom)
+	}
+
+	if filters.DateTo != "" {
+		argCount++
+		query += fmt.Sprintf(" AND contact_date <= $%d", argCount)
+		args = append(args, filters.DateTo)
+	}
+
+	if filters.Band != "" {
+		argCount++
+		query += fmt.Sprintf(" AND band = $%d", argCount)
+		args = append(args, filters.Band)
+	}
+
+	if filters.Mode != "" {
+		argCount++
+		query += fmt.Sprintf(" AND mode = $%d", argCount)
+		args = append(args, filters.Mode)
+	}
+
+	if filters.Country != "" {
+		argCount++
+		query += fmt.Sprintf(" AND LOWER(country) LIKE LOWER($%d)", argCount)
+		args = append(args, "%"+filters.Country+"%")
+	}
+
+	if filters.FreqMin > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND frequency >= $%d", argCount)
+		args = append(args, filters.FreqMin)
+	}
+
+	if filters.FreqMax > 0 {
+		argCount++
+		query += fmt.Sprintf(" AND frequency <= $%d", argCount)
+		args = append(args, filters.FreqMax)
+	}
+
+	if filters.Confirmed {
+		query += " AND confirmed = true"
+	}
+
+	query += " ORDER BY contact_date DESC, time_on DESC"
+
+	rows, err := q.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search contacts: %w", err)
 	}
 	defer rows.Close()
 
@@ -256,248 +339,119 @@ func (q *QSOLogger) SearchContacts() {
 	for rows.Next() {
 		var contact Contact
 		err := rows.Scan(
-			&contact.ID, &contact.Callsign, &contact.Date, &contact.TimeOn, &contact.TimeOff,
-			&contact.Frequency, &contact.Band, &contact.Mode, &contact.RSTSent, &contact.RSTReceived,
-			&contact.Name, &contact.QTH, &contact.Country, &contact.Grid, &contact.Power,
-			&contact.Comment, &contact.Confirmed, &contact.CreatedAt, &contact.UpdatedAt,
+			&contact.ID, &contact.Callsign, &contact.Date, &contact.TimeOn,
+			&contact.TimeOff, &contact.Frequency, &contact.Band, &contact.Mode,
+			&contact.RSTSent, &contact.RSTReceived, &contact.Name, &contact.QTH,
+			&contact.Country, &contact.Grid, &contact.Power, &contact.Comment,
+			&contact.Confirmed, &contact.CreatedAt, &contact.UpdatedAt,
 		)
 		if err != nil {
-			fmt.Printf("Error scanning contact: %v\n", err)
-			continue
+			return nil, fmt.Errorf("failed to scan contact: %w", err)
 		}
 		contacts = append(contacts, contact)
 	}
 
-	if len(contacts) == 0 {
-		fmt.Printf("No QSOs found matching '%s'\n", searchTerm)
-		return
-	}
-
-	fmt.Printf("\n=== SEARCH RESULTS for '%s' (%d found) ===\n", searchTerm, len(contacts))
-	fmt.Println("Date       Time  Callsign     Freq     Band  Mode  RST S/R  Name      QTH")
-	fmt.Println("-------------------------------------------------------------------------------")
-
-	for _, contact := range contacts {
-		fmt.Printf("%-10s %-5s %-12s %8.3f %-5s %-5s %-7s %-9s %s\n",
-			contact.Date.Format("2006-01-02"),
-			contact.TimeOn,
-			contact.Callsign,
-			contact.Frequency,
-			contact.Band,
-			contact.Mode,
-			contact.RSTSent+"/"+contact.RSTReceived,
-			contact.Name,
-			contact.QTH)
-	}
+	return contacts, nil
 }
 
-// ShowStatistics displays various statistics about the QSO log from database
-func (q *QSOLogger) ShowStatistics() {
-	contacts, err := q.LoadContacts()
+// GetStatistics returns QSO statistics
+func (q *QSOLogger) GetStatistics() (*Statistics, error) {
+	stats := &Statistics{
+		QSOsByBand:    make(map[string]int),
+		QSOsByMode:    make(map[string]int),
+		QSOsByCountry: make(map[string]int),
+	}
+
+	// Get basic counts
+	err := q.db.QueryRow(`
+		SELECT 
+			COUNT(*) as total,
+			COUNT(DISTINCT callsign) as unique_callsigns,
+			COUNT(DISTINCT country) as unique_countries,
+			COUNT(CASE WHEN confirmed = true THEN 1 END) as confirmed
+		FROM contacts
+	`).Scan(&stats.TotalQSOs, &stats.UniqueCallsigns, &stats.UniqueCountries, &stats.ConfirmedQSOs)
 	if err != nil {
-		fmt.Printf("Error loading contacts: %v\n", err)
-		return
+		return nil, fmt.Errorf("failed to get basic statistics: %w", err)
 	}
 
-	if len(contacts) == 0 {
-		fmt.Println("\nNo QSOs found in database.")
-		return
+	// Get QSOs by band
+	rows, err := q.db.Query("SELECT band, COUNT(*) FROM contacts GROUP BY band ORDER BY COUNT(*) DESC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get band statistics: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var band string
+		var count int
+		if err := rows.Scan(&band, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan band statistics: %w", err)
+		}
+		stats.QSOsByBand[band] = count
 	}
 
-	fmt.Println("\n=== QSO LOG STATISTICS ===")
+	// Get QSOs by mode
+	rows, err = q.db.Query("SELECT mode, COUNT(*) FROM contacts GROUP BY mode ORDER BY COUNT(*) DESC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mode statistics: %w", err)
+	}
+	defer rows.Close()
 
-	// Basic counts
-	fmt.Printf("Total QSOs: %d\n", len(contacts))
-
-	// Band statistics
-	bandCounts := make(map[string]int)
-	modeCounts := make(map[string]int)
-	countryCounts := make(map[string]int)
-	confirmedCount := 0
-
-	for _, contact := range contacts {
-		if contact.Band != "" {
-			bandCounts[contact.Band]++
+	for rows.Next() {
+		var mode string
+		var count int
+		if err := rows.Scan(&mode, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan mode statistics: %w", err)
 		}
-		if contact.Mode != "" {
-			modeCounts[contact.Mode]++
-		}
-		if contact.Country != "" {
-			countryCounts[contact.Country]++
-		}
-		if contact.Confirmed {
-			confirmedCount++
-		}
+		stats.QSOsByMode[mode] = count
 	}
 
-	fmt.Printf("Confirmed QSOs: %d (%.1f%%)\n", confirmedCount,
-		float64(confirmedCount)/float64(len(contacts))*100)
-
-	// Bands worked
-	fmt.Printf("\nBands worked (%d):\n", len(bandCounts))
-	bandNames := make([]string, 0, len(bandCounts))
-	for band := range bandCounts {
-		bandNames = append(bandNames, band)
+	// Get QSOs by country
+	rows, err = q.db.Query("SELECT country, COUNT(*) FROM contacts WHERE country != '' GROUP BY country ORDER BY COUNT(*) DESC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get country statistics: %w", err)
 	}
-	sort.Strings(bandNames)
+	defer rows.Close()
 
-	for _, band := range bandNames {
-		fmt.Printf("  %-8s: %d QSOs\n", band, bandCounts[band])
-	}
-
-	// Modes used
-	fmt.Printf("\nModes used (%d):\n", len(modeCounts))
-	modeNames := make([]string, 0, len(modeCounts))
-	for mode := range modeCounts {
-		modeNames = append(modeNames, mode)
-	}
-	sort.Strings(modeNames)
-
-	for _, mode := range modeNames {
-		fmt.Printf("  %-8s: %d QSOs\n", mode, modeCounts[mode])
+	for rows.Next() {
+		var country string
+		var count int
+		if err := rows.Scan(&country, &count); err != nil {
+			return nil, fmt.Errorf("failed to scan country statistics: %w", err)
+		}
+		stats.QSOsByCountry[country] = count
 	}
 
-	// Countries worked
-	fmt.Printf("\nCountries worked (%d):\n", len(countryCounts))
-	if len(countryCounts) <= 10 {
-		// Show all if 10 or fewer
-		countryNames := make([]string, 0, len(countryCounts))
-		for country := range countryCounts {
-			countryNames = append(countryNames, country)
-		}
-		sort.Strings(countryNames)
-
-		for _, country := range countryNames {
-			if country != "" {
-				fmt.Printf("  %-20s: %d QSOs\n", country, countryCounts[country])
-			}
-		}
-	} else {
-		// Show top 10
-		type countryCount struct {
-			name  string
-			count int
-		}
-
-		var counts []countryCount
-		for country, count := range countryCounts {
-			if country != "" {
-				counts = append(counts, countryCount{country, count})
-			}
-		}
-
-		sort.Slice(counts, func(i, j int) bool {
-			return counts[i].count > counts[j].count
-		})
-
-		fmt.Println("  Top 10:")
-		for i, cc := range counts {
-			if i >= 10 {
-				break
-			}
-			fmt.Printf("  %-20s: %d QSOs\n", cc.name, cc.count)
-		}
-	}
-
-	// Date range
-	if len(contacts) > 0 {
-		earliest := contacts[0].Date
-		latest := contacts[0].Date
-
-		for _, contact := range contacts {
-			if contact.Date.Before(earliest) {
-				earliest = contact.Date
-			}
-			if contact.Date.After(latest) {
-				latest = contact.Date
-			}
-		}
-
-		fmt.Printf("\nDate range: %s to %s\n",
-			earliest.Format("2006-01-02"),
-			latest.Format("2006-01-02"))
-	}
+	return stats, nil
 }
 
-// ExportADIF exports QSOs to Amateur Data Interchange Format
-func (q *QSOLogger) ExportADIF() {
+// ExportADIFToWriter exports all contacts to ADIF format to a writer
+func (q *QSOLogger) ExportADIFToWriter(w io.Writer) error {
 	contacts, err := q.LoadContacts()
 	if err != nil {
-		fmt.Printf("Error loading contacts: %v\n", err)
-		return
+		return fmt.Errorf("failed to load contacts: %w", err)
 	}
 
-	if len(contacts) == 0 {
-		fmt.Println("\nNo QSOs to export.")
-		return
+	// Write ADIF header
+	adifHeader := fmt.Sprintf("Generated by GoQSO v%s on %s\n\n<ADIF_VER:5>3.1.0\n<PROGRAMID:5>GoQSO\n<PROGRAMVERSION:%d>%s\n<EOH>\n\n",
+		version, time.Now().Format("2006-01-02 15:04:05"), len(version), version)
+
+	if _, err := w.Write([]byte(adifHeader)); err != nil {
+		return fmt.Errorf("failed to write ADIF header: %w", err)
 	}
 
-	filename := fmt.Sprintf("goqso_export_%s.adi", time.Now().Format("20060102_150405"))
-
-	// Validate filename to prevent path traversal (security fix G304)
-	cleanedFilename := filepath.Clean(filename)
-	if strings.Contains(cleanedFilename, "..") || strings.ContainsAny(cleanedFilename, "/\\") || cleanedFilename != filename {
-		fmt.Println("Error: Invalid filename generated")
-		return
-	}
-
-	file, err := os.Create(cleanedFilename)
-	if err != nil {
-		fmt.Printf("Error creating ADIF file: %v\n", err)
-		return
-	}
-	defer file.Close()
-
-	// ADIF header
-	header := fmt.Sprintf("Amateur Data Interchange Format export from GoQSO v%s\n", version)
-	header += fmt.Sprintf("Export date: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-	header += fmt.Sprintf("Total QSOs: %d\n", len(contacts))
-	header += "<EOH>\n\n"
-
-	if _, err := file.WriteString(header); err != nil {
-		fmt.Printf("Error writing ADIF header: %v\n", err)
-		return
-	}
-
-	// Export each contact
+	// Write each contact
 	for _, contact := range contacts {
-		adifRecord := ""
-
-		if contact.Callsign != "" {
-			adifRecord += fmt.Sprintf("<CALL:%d>%s ", len(contact.Callsign), contact.Callsign)
-		}
-
-		dateStr := contact.Date.Format("20060102")
-		adifRecord += fmt.Sprintf("<QSO_DATE:%d>%s ", len(dateStr), dateStr)
-
-		if contact.TimeOn != "" {
-			adifRecord += fmt.Sprintf("<TIME_ON:%d>%s ", len(contact.TimeOn), contact.TimeOn)
-		}
-
-		if contact.TimeOff != "" {
-			adifRecord += fmt.Sprintf("<TIME_OFF:%d>%s ", len(contact.TimeOff), contact.TimeOff)
-		}
-
-		if contact.Frequency > 0 {
-			freqStr := fmt.Sprintf("%.3f", contact.Frequency)
-			adifRecord += fmt.Sprintf("<FREQ:%d>%s ", len(freqStr), freqStr)
-		}
-
-		if contact.Band != "" {
-			adifRecord += fmt.Sprintf("<BAND:%d>%s ", len(contact.Band), contact.Band)
-		}
-
-		if contact.Mode != "" {
-			adifRecord += fmt.Sprintf("<MODE:%d>%s ", len(contact.Mode), contact.Mode)
-		}
-
-		if contact.RSTSent != "" {
-			adifRecord += fmt.Sprintf("<RST_SENT:%d>%s ", len(contact.RSTSent), contact.RSTSent)
-		}
-
-		if contact.RSTReceived != "" {
-			adifRecord += fmt.Sprintf("<RST_RCVD:%d>%s ", len(contact.RSTReceived), contact.RSTReceived)
-		}
+		adifRecord := fmt.Sprintf("<CALL:%d>%s ", len(contact.Callsign), contact.Callsign)
+		adifRecord += fmt.Sprintf("<QSO_DATE:8>%s ", contact.Date.Format("20060102"))
+		adifRecord += fmt.Sprintf("<TIME_ON:6>%s ", strings.ReplaceAll(contact.TimeOn, ":", ""))
+		adifRecord += fmt.Sprintf("<TIME_OFF:6>%s ", strings.ReplaceAll(contact.TimeOff, ":", ""))
+		adifRecord += fmt.Sprintf("<FREQ:%d>%s ", len(fmt.Sprintf("%.3f", contact.Frequency)), fmt.Sprintf("%.3f", contact.Frequency))
+		adifRecord += fmt.Sprintf("<BAND:%d>%s ", len(contact.Band), contact.Band)
+		adifRecord += fmt.Sprintf("<MODE:%d>%s ", len(contact.Mode), contact.Mode)
+		adifRecord += fmt.Sprintf("<RST_SENT:%d>%s ", len(contact.RSTSent), contact.RSTSent)
+		adifRecord += fmt.Sprintf("<RST_RCVD:%d>%s ", len(contact.RSTReceived), contact.RSTReceived)
 
 		if contact.Name != "" {
 			adifRecord += fmt.Sprintf("<NAME:%d>%s ", len(contact.Name), contact.Name)
@@ -525,11 +479,10 @@ func (q *QSOLogger) ExportADIF() {
 		}
 
 		adifRecord += "<EOR>\n"
-		if _, err := file.WriteString(adifRecord); err != nil {
-			fmt.Printf("Error writing contact record: %v\n", err)
-			return
+		if _, err := w.Write([]byte(adifRecord)); err != nil {
+			return fmt.Errorf("failed to write contact record: %w", err)
 		}
 	}
 
-	fmt.Printf("\nSuccessfully exported %d QSOs to %s\n", len(contacts), cleanedFilename)
+	return nil
 }
