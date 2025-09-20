@@ -40,10 +40,10 @@ jobs:
         cache: true
 
     - name: golangci-lint
-      uses: golangci/golangci-lint-action@v4
+      uses: golangci/golangci-lint-action@v6
       with:
-        version: latest
-        args: --timeout=5m --config=.golangci.yml
+        version: v1.65.1
+        args: --timeout=5m --config=.golangci.yml --out-format=colored-line-number
 
   test:
     name: Run Tests
