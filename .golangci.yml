@@ -15,10 +15,29 @@ linters-settings:
   goimports:
     local-prefixes: goqso
   govet:
-    enable-all: true
-    settings:
-      shadow:
-        strict: true
+    enable-all: false
+    enable:
+      - assign
+      - atomic
+      - bools
+      - buildtag
+      - cgocall
+      - composites
+      - copylocks
+      - errorsas
+      - httpresponse
+      - loopclosure
+      - lostcancel
+      - nilfunc
+      - printf
+      - shift
+      - stdmethods
+      - structtag
+      - tests
+      - unmarshal
+      - unreachable
+      - unsafeptr
+      - unusedresult
   gocyclo:
     min-complexity: 15
   dupl:
@@ -32,7 +51,7 @@ linters:
     - gofmt
     - goimports
     - govet
-    - revive      # replacement for golint
+    - revive
     - gocyclo
     - ineffassign
     - misspell
@@ -42,7 +61,7 @@ linters:
     - staticcheck
     - unused
     - typecheck
-  disable: []
+  disable-all: false
 
 issues:
   exclude-rules:

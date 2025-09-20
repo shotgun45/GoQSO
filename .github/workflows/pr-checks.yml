@@ -44,6 +44,8 @@ jobs:
       with:
         version: v1.61.0
         args: --timeout=5m --config=.golangci.yml
+        skip-build-cache: true
+        skip-pkg-cache: true
 
   test:
     name: Run Tests
