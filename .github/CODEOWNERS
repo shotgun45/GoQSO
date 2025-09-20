@@ -1,0 +1,19 @@
+# Code owners for GoQSO repository
+# These owners will be requested for review when someone opens a pull request.
+
+# Global owners - these people are owners of everything in the repo
+* @shotgun45
+
+# Go source code
+*.go @shotgun45
+
+# Configuration files
+.golangci.yml @shotgun45
+Makefile @shotgun45
+
+# GitHub workflows
+.github/workflows/ @shotgun45
+
+# Documentation
+docs/ @shotgun45
+README.md @shotgun45
