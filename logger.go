@@ -633,6 +633,7 @@ func (q *QSOLogger) SearchContactsPaginated(filters SearchRequest) (*PaginationR
 	limitPlaceholder := len(args) + 1
 	offsetPlaceholder := len(args) + 2
 
+	// #nosec G202 - This is safe because we only concatenate static SQL parts and parameterized placeholders, no user input
 	query := "SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode, " +
 		"rst_sent, rst_received, operator_name, qth, country, grid_square, " +
 		"power_watts, comment, confirmed, created_at, updated_at " +
