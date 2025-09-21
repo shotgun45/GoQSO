@@ -574,79 +574,71 @@ func (q *QSOLogger) SearchContactsPaginated(filters SearchRequest) (*PaginationR
 
 	offset := (page - 1) * pageSize
 
-	// Build base query
-	baseQuery := `
-		FROM contacts
-		WHERE 1=1
-	`
+	// Build base query with WHERE conditions
+	whereConditions := []string{"1=1"}
 	args := []interface{}{}
-	argCount := 0
 
 	// Build dynamic WHERE clause
 	if filters.Search != "" {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND (LOWER(callsign) LIKE LOWER($%d) OR LOWER(operator_name) LIKE LOWER($%d) OR LOWER(qth) LIKE LOWER($%d) OR LOWER(country) LIKE LOWER($%d))", argCount, argCount, argCount, argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("(LOWER(callsign) LIKE LOWER($%d) OR LOWER(operator_name) LIKE LOWER($%d) OR LOWER(qth) LIKE LOWER($%d) OR LOWER(country) LIKE LOWER($%d))", len(args)+1, len(args)+1, len(args)+1, len(args)+1))
 		args = append(args, "%"+filters.Search+"%")
 	}
 
 	if filters.DateFrom != "" {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND contact_date >= $%d", argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("contact_date >= $%d", len(args)+1))
 		args = append(args, filters.DateFrom)
 	}
 
 	if filters.DateTo != "" {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND contact_date <= $%d", argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("contact_date <= $%d", len(args)+1))
 		args = append(args, filters.DateTo)
 	}
 
 	if filters.Band != "" {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND LOWER(band) = LOWER($%d)", argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("LOWER(band) = LOWER($%d)", len(args)+1))
 		args = append(args, filters.Band)
 	}
 
 	if filters.Mode != "" {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND LOWER(mode) = LOWER($%d)", argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("LOWER(mode) = LOWER($%d)", len(args)+1))
 		args = append(args, filters.Mode)
 	}
 
 	if filters.Country != "" {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND LOWER(country) LIKE LOWER($%d)", argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("LOWER(country) LIKE LOWER($%d)", len(args)+1))
 		args = append(args, "%"+filters.Country+"%")
 	}
 
 	if filters.FreqMin > 0 {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND frequency >= $%d", argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("frequency >= $%d", len(args)+1))
 		args = append(args, filters.FreqMin)
 	}
 
 	if filters.FreqMax > 0 {
-		argCount++
-		baseQuery += fmt.Sprintf(" AND frequency <= $%d", argCount)
+		whereConditions = append(whereConditions, fmt.Sprintf("frequency <= $%d", len(args)+1))
 		args = append(args, filters.FreqMax)
 	}
 
+	whereClause := strings.Join(whereConditions, " AND ")
+
 	// Get total count
 	var totalItems int
-	countQuery := "SELECT COUNT(*) " + baseQuery
+	countQuery := "SELECT COUNT(*) FROM contacts WHERE " + whereClause
 	err := q.db.QueryRow(countQuery, args...).Scan(&totalItems)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get total count: %w", err)
 	}
 
-	// Get paginated results
-	query := `
-		SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode,
-		       rst_sent, rst_received, operator_name, qth, country, grid_square,
-		       power_watts, comment, confirmed, created_at, updated_at
-	` + baseQuery + `
-		ORDER BY contact_date DESC, time_on DESC
-		LIMIT $` + fmt.Sprintf("%d", argCount+1) + ` OFFSET $` + fmt.Sprintf("%d", argCount+2)
+	// Build the main query with proper parameter placeholders
+	limitPlaceholder := len(args) + 1
+	offsetPlaceholder := len(args) + 2
+
+	query := "SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode, " +
+		"rst_sent, rst_received, operator_name, qth, country, grid_square, " +
+		"power_watts, comment, confirmed, created_at, updated_at " +
+		"FROM contacts WHERE " + whereClause + " " +
+		"ORDER BY contact_date DESC, time_on DESC " +
+		"LIMIT $" + fmt.Sprintf("%d", limitPlaceholder) + " OFFSET $" + fmt.Sprintf("%d", offsetPlaceholder)
 
 	args = append(args, pageSize, offset)
 
