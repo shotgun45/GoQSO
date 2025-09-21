@@ -20,6 +20,14 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
+type PaginatedResponse struct {
+	Items      interface{} `json:"items"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"page_size"`
+	TotalItems int         `json:"total_items"`
+	TotalPages int         `json:"total_pages"`
+}
+
 type ContactRequest struct {
 	Callsign     string  `json:"callsign"`
 	OperatorName string  `json:"operator_name"`
@@ -49,6 +57,8 @@ type SearchRequest struct {
 	FreqMin   float64 `json:"freq_min"`
 	FreqMax   float64 `json:"freq_max"`
 	Confirmed bool    `json:"confirmed"`
+	Page      int     `json:"page"`      // Current page (1-based)
+	PageSize  int     `json:"page_size"` // Items per page
 }
 
 type ImportOptions struct {
@@ -116,13 +126,42 @@ func setupRoutes(logger *QSOLogger) *mux.Router {
 
 func handleGetContacts(logger *QSOLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		contacts, err := logger.GetAllContacts()
+		// Parse pagination parameters from query string
+		pageStr := r.URL.Query().Get("page")
+		pageSizeStr := r.URL.Query().Get("page_size")
+
+		page := 1
+		pageSize := 20
+
+		if pageStr != "" {
+			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+				page = p
+			}
+		}
+
+		if pageSizeStr != "" {
+			if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 1000 {
+				pageSize = ps
+			}
+		}
+
+		// Get paginated contacts
+		result, err := logger.GetContactsPaginated(page, pageSize)
 		if err != nil {
 			sendError(w, "Failed to retrieve contacts", http.StatusInternalServerError)
 			return
 		}
 
-		sendSuccess(w, contacts)
+		// Return paginated response
+		response := PaginatedResponse{
+			Items:      result.Contacts,
+			Page:       result.Page,
+			PageSize:   result.PageSize,
+			TotalItems: result.TotalItems,
+			TotalPages: result.TotalPages,
+		}
+
+		sendSuccess(w, response)
 	}
 }
 
@@ -284,13 +323,31 @@ func handleSearchContacts(logger *QSOLogger) http.HandlerFunc {
 			return
 		}
 
-		contacts, err := logger.SearchContactsAPI(req)
+		// Set default pagination if not provided
+		if req.Page <= 0 {
+			req.Page = 1
+		}
+		if req.PageSize <= 0 {
+			req.PageSize = 20
+		}
+
+		// Use paginated search
+		result, err := logger.SearchContactsPaginated(req)
 		if err != nil {
 			sendError(w, fmt.Sprintf("Search failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		sendSuccess(w, contacts)
+		// Return paginated response
+		response := PaginatedResponse{
+			Items:      result.Contacts,
+			Page:       result.Page,
+			PageSize:   result.PageSize,
+			TotalItems: result.TotalItems,
+			TotalPages: result.TotalPages,
+		}
+
+		sendSuccess(w, response)
 	}
 }
 

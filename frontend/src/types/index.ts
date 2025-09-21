@@ -52,6 +52,16 @@ export interface SearchFilters {
   freq_min?: number;
   freq_max?: number;
   confirmed?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }
 
 export interface Statistics {
