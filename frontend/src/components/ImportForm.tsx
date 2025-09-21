@@ -179,7 +179,7 @@ const ImportForm: React.FC<ImportFormProps> = ({ onImportComplete }) => {
             </div>
           </label>
 
-          <label className="radio-option">
+          {/* <label className="radio-option">
             <input
               type="radio"
               name="importType"
@@ -187,7 +187,7 @@ const ImportForm: React.FC<ImportFormProps> = ({ onImportComplete }) => {
               checked={importType === 'lotw'}
               onChange={(e) => setImportType(e.target.value as 'adif' | 'lotw')}
             />
-            <div className="radio-content">
+           <div className="radio-content">
               <div className="radio-icon">
                 <Globe size={24} />
               </div>
@@ -196,7 +196,7 @@ const ImportForm: React.FC<ImportFormProps> = ({ onImportComplete }) => {
                 <p>Import confirmed QSOs directly from ARRL LoTW</p>
               </div>
             </div>
-          </label>
+          </label> */}
         </div>
       </div>
 

@@ -11,7 +11,6 @@ A comprehensive amateur radio contact logging application featuring a modern Rea
 - **Advanced Search** - Search contacts by callsign, date range, band, mode, country, and more
 - **Real-time Statistics** - View comprehensive QSO statistics and summaries
 - **ADIF Export** - Export contacts to ADIF format for use with other amateur radio software
-- **Band Detection** - Automatic band calculation from frequency
 
 ### Technical Features
 - **Modern Web UI** - React/TypeScript frontend with responsive design
@@ -53,7 +52,6 @@ A comprehensive amateur radio contact logging application featuring a modern Rea
    - Test PostgreSQL connectivity (if configured)
    - Start the Go backend server on port 8080
    - Start the React frontend development server on port 3000
-   - Display helpful information about available endpoints
 
 ### Access Your Application
 
@@ -61,7 +59,6 @@ After running `./start.sh`, the application will be available at:
 
 - **🌐 Frontend Application**: http://localhost:3000
 - **📊 Backend API**: http://localhost:8080
-- **📋 API Documentation**: Available in the terminal output
 
 ## 🛠️ Manual Setup
 
@@ -144,7 +141,7 @@ GoQSO/
 
 GoQSO uses PostgreSQL with automatic schema migrations powered by [Goose](https://github.com/pressly/goose).
 
-For detailed database setup instructions, see [POSTGRESQL_SETUP.md](POSTGRESQL_SETUP.md).
+For detailed database setup instructions, see [POSTGRESQL_SETUP.md](./documentation/POSTGRESQL_SETUP.md).
 
 ### Environment Variables
 
@@ -221,8 +218,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🏆 Amateur Radio Bands Supported
 
-GoQSO automatically detects bands from frequency input:
-
 | Band | Frequency Range | Notes |
 |------|----------------|-------|
 | 160m | 1.8 - 2.0 MHz | Long wave |
@@ -245,4 +240,4 @@ For questions, issues, or feature requests, please open an issue on GitHub.
 
 ---
 
-**73 de [Your Callsign]** 📻
+**73 K3JIP** 📻
