@@ -82,7 +82,7 @@ func (p *ADIFParser) ParseADIF(reader io.Reader) ([]ADIFRecord, error) {
 	var originalRecords []string
 	currentPos := 0
 
-	for i, _ := range recordStrings {
+	for i := range recordStrings {
 		if i == len(recordStrings)-1 {
 			// Last segment after final <eor>
 			break
