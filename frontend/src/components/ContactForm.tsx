@@ -83,7 +83,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
       frequency: 0,
       band: '',
       mode: '',
-      power_watts: 100,
+      power_watts: 0,
       rst_sent: '59',
       rst_received: '59',
       qth: '',
@@ -181,7 +181,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
 
   const getCurrentTime = () => {
     const now = new Date();
-    return now.toTimeString().slice(0, 5); // HH:MM format
+    return now.toISOString().slice(11, 16); // Get HH:MM in UTC format
   };
 
   return (
@@ -375,7 +375,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
               max="1500"
               value={formData.power_watts || ''}
               onChange={(e) => handleInputChange('power_watts', parseInt(e.target.value) || 0)}
-              placeholder="100"
+              placeholder="Enter power in watts"
               disabled={loading}
             />
           </div>

@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Contact, NewContact, SearchFilters, Statistics as StatsType } from './types';
+import { Contact, NewContact, SearchFilters, Statistics as StatsType, ImportResult } from './types';
 import { qsoApi, downloadFile } from './api';
 import ContactList from './components/ContactList.tsx';
 import ContactForm from './components/ContactForm.tsx';
 import SearchForm from './components/SearchForm.tsx';
 import Statistics from './components/Statistics.tsx';
+import ImportForm from './components/ImportForm.tsx';
 import { 
   Radio, 
   Plus, 
   Search, 
   BarChart3, 
   Download,
-  RefreshCw 
+  RefreshCw,
+  Upload
 } from 'lucide-react';
 import './App.css';
 
@@ -20,7 +22,7 @@ function App() {
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats' | 'import'>('list');
   const [editingContact, setEditingContact] = useState<Contact | undefined>(undefined);
 
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
@@ -139,6 +141,20 @@ function App() {
     }
   };
 
+  const handleImportComplete = (result: ImportResult) => {
+    if (result.success) {
+      setError(null);
+      // Refresh contacts after successful import
+      loadContacts();
+      // Show success message
+      alert(`Import completed successfully!\n\nImported: ${result.imported_count} contacts\nSkipped: ${result.skipped_count} contacts\nErrors: ${result.error_count} contacts`);
+      // Switch back to list view
+      setActiveTab('list');
+    } else {
+      setError(`Import failed: ${result.message}\n${result.errors.join('\n')}`);
+    }
+  };
+
   const TabButton = ({ 
     tab, 
     icon: Icon, 
@@ -158,10 +174,10 @@ function App() {
           setEditingContact(undefined);
         }
       }}
-      className={`tab-button ${isActive ? 'active' : ''}`}
+      className={`sidebar-button ${isActive ? 'active' : ''}`}
     >
       <Icon size={20} />
-      {label}
+      <span>{label}</span>
     </button>
   );
 
@@ -186,75 +202,84 @@ function App() {
         </div>
       </header>
 
-      <nav className="navigation">
-        <TabButton tab="list" icon={Radio} label="QSO Log" isActive={activeTab === 'list'} />
-        <TabButton tab="add" icon={Plus} label={editingContact ? "Edit QSO" : "Add QSO"} isActive={activeTab === 'add'} />
-        <TabButton tab="search" icon={Search} label="Search" isActive={activeTab === 'search'} />
-        <TabButton tab="stats" icon={BarChart3} label="Statistics" isActive={activeTab === 'stats'} />
-      </nav>
-
-      <main className="main-content">
-        {error && (
-          <div className="error-message">
-            {error}
-            <button onClick={() => setError(null)}>×</button>
+      <div className="app-body">
+        <nav className="sidebar">
+          <div className="sidebar-nav">
+            <TabButton tab="list" icon={Radio} label="QSO Log" isActive={activeTab === 'list'} />
+            <TabButton tab="add" icon={Plus} label={editingContact ? "Edit QSO" : "Add QSO"} isActive={activeTab === 'add'} />
+            <TabButton tab="search" icon={Search} label="Search" isActive={activeTab === 'search'} />
+            <TabButton tab="stats" icon={BarChart3} label="Statistics" isActive={activeTab === 'stats'} />
+            <TabButton tab="import" icon={Upload} label="Import" isActive={activeTab === 'import'} />
           </div>
-        )}
+        </nav>
 
-        {activeTab === 'list' && (
-          <ContactList 
-            contacts={filteredContacts} 
-            loading={loading}
-            onDelete={handleDeleteContact}
-            onEdit={handleEditContact}
-          />
-        )}
+        <main className="main-content">
+          {error && (
+            <div className="error-message">
+              {error}
+              <button onClick={() => setError(null)}>×</button>
+            </div>
+          )}
 
-        {activeTab === 'add' && (
-          <ContactForm 
-            onSave={handleAddContact} 
-            onCancel={handleCancelEdit}
-            editingContact={editingContact}
-          />
-        )}
-
-        {activeTab === 'search' && (
-          <div>
-            <SearchForm 
-              filters={searchFilters}
-              onFiltersChange={handleFiltersChange}
-              onClearFilters={handleClearFilters}
-              totalContacts={contacts.length}
-              filteredContacts={filteredContacts.length}
-            />
+          {activeTab === 'list' && (
             <ContactList 
               contacts={filteredContacts} 
               loading={loading}
               onDelete={handleDeleteContact}
               onEdit={handleEditContact}
             />
-          </div>
-        )}
+          )}
 
-        {activeTab === 'stats' && (
-          <Statistics 
-            statistics={statistics || {
-              total_qsos: 0,
-              unique_callsigns: 0,
-              unique_countries: 0,
-              confirmed_qsos: 0,
-              qsos_by_band: {},
-              qsos_by_mode: {},
-              qsos_by_country: {},
-              bands_worked: {},
-              modes_used: {},
-              countries_worked: {},
-              date_range: { earliest: '', latest: '' }
-            }}
-            loading={statsLoading}
-          />
-        )}
-      </main>
+          {activeTab === 'add' && (
+            <ContactForm 
+              onSave={handleAddContact} 
+              onCancel={handleCancelEdit}
+              editingContact={editingContact}
+            />
+          )}
+
+          {activeTab === 'search' && (
+            <div>
+              <SearchForm 
+                filters={searchFilters}
+                onFiltersChange={handleFiltersChange}
+                onClearFilters={handleClearFilters}
+                totalContacts={contacts.length}
+                filteredContacts={filteredContacts.length}
+              />
+              <ContactList 
+                contacts={filteredContacts} 
+                loading={loading}
+                onDelete={handleDeleteContact}
+                onEdit={handleEditContact}
+              />
+            </div>
+          )}
+
+          {activeTab === 'stats' && (
+            <Statistics 
+              statistics={statistics || {
+                total_qsos: 0,
+                unique_callsigns: 0,
+                unique_countries: 0,
+                confirmed_qsos: 0,
+                qsos_by_band: {},
+                qsos_by_mode: {},
+                qsos_by_country: {},
+                bands_worked: {},
+                modes_used: {},
+                countries_worked: {},
+                date_range: { earliest: '', latest: '' }
+              }}
+              loading={statsLoading}
+            />
+          )}
+
+          {activeTab === 'import' && (
+            <ImportForm onImportComplete={handleImportComplete} />
+          )}
+        </main>
+      </div>
     </div>
   );
 }
