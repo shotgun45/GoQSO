@@ -1,5 +1,5 @@
 import axios, { AxiosResponse } from 'axios';
-import { Contact, NewContact, SearchFilters, Statistics } from '../types';
+import { Contact, NewContact, SearchFilters, Statistics, PaginatedResponse } from '../types';
 
 // Backend API response wrapper
 interface APIResponse<T> {
@@ -64,13 +64,27 @@ const api = axios.create({
 });
 
 export const qsoApi = {
-  // Get all contacts
-  getContacts: async (): Promise<Contact[]> => {
-    const response: AxiosResponse<APIResponse<BackendContact[]>> = await api.get('/contacts');
+  // Get all contacts (with pagination)
+  getContacts: async (page: number = 1, pageSize: number = 20): Promise<PaginatedResponse<Contact>> => {
+    const response: AxiosResponse<APIResponse<PaginatedResponse<BackendContact>>> = await api.get(`/contacts?page=${page}&page_size=${pageSize}`);
     if (!response.data.success) {
       throw new Error(response.data.error || 'Failed to get contacts');
     }
-    return (response.data.data || []).map(transformContact);
+    const data = response.data.data!;
+    return {
+      items: data.items.map(transformContact),
+      page: data.page,
+      page_size: data.page_size,
+      total_items: data.total_items,
+      total_pages: data.total_pages,
+    };
+  },
+
+  // Get all contacts (legacy method for backward compatibility)
+  getAllContacts: async (): Promise<Contact[]> => {
+    // Get first 1000 items to maintain compatibility
+    const response = await qsoApi.getContacts(1, 1000);
+    return response.items;
   },
 
   // Get contact by ID
@@ -108,13 +122,26 @@ export const qsoApi = {
     }
   },
 
-  // Search contacts
-  searchContacts: async (filters: SearchFilters): Promise<Contact[]> => {
-    const response: AxiosResponse<APIResponse<BackendContact[]>> = await api.post('/contacts/search', filters);
+  // Search contacts (with pagination)
+  searchContacts: async (filters: SearchFilters): Promise<PaginatedResponse<Contact>> => {
+    const response: AxiosResponse<APIResponse<PaginatedResponse<BackendContact>>> = await api.post('/contacts/search', filters);
     if (!response.data.success) {
       throw new Error(response.data.error || 'Failed to search contacts');
     }
-    return (response.data.data || []).map(transformContact);
+    const data = response.data.data!;
+    return {
+      items: data.items.map(transformContact),
+      page: data.page,
+      page_size: data.page_size,
+      total_items: data.total_items,
+      total_pages: data.total_pages,
+    };
+  },
+
+  // Legacy search method for backward compatibility
+  searchContactsLegacy: async (filters: SearchFilters): Promise<Contact[]> => {
+    const response = await qsoApi.searchContacts({ ...filters, page: 1, page_size: 1000 });
+    return response.items;
   },
 
   // Get statistics

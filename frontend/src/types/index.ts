@@ -52,6 +52,16 @@ export interface SearchFilters {
   freq_min?: number;
   freq_max?: number;
   confirmed?: boolean;
+  page?: number;
+  page_size?: number;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
 }
 
 export interface Statistics {
@@ -69,4 +79,26 @@ export interface Statistics {
     earliest: string;
     latest: string;
   };
+}
+
+export interface ImportResult {
+  success: boolean;
+  imported_count: number;
+  skipped_count: number;
+  error_count: number;
+  errors: string[];
+  message: string;
+}
+
+export interface ImportOptions {
+  file_type: 'adif' | 'lotw';
+  merge_duplicates: boolean;
+  update_existing: boolean;
+}
+
+export interface LotwCredentials {
+  username: string;
+  password: string;
+  start_date?: string;
+  end_date?: string;
 }

@@ -485,3 +485,196 @@ func (q *QSOLogger) ExportADIFToWriter(w io.Writer) error {
 
 	return nil
 }
+
+// PaginationResult represents paginated query results
+type PaginationResult struct {
+	Contacts   []Contact `json:"contacts"`
+	Page       int       `json:"page"`
+	PageSize   int       `json:"page_size"`
+	TotalItems int       `json:"total_items"`
+	TotalPages int       `json:"total_pages"`
+}
+
+// GetContactsPaginated returns paginated contacts
+func (q *QSOLogger) GetContactsPaginated(page, pageSize int) (*PaginationResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 1000 {
+		pageSize = 20 // Default page size
+	}
+
+	offset := (page - 1) * pageSize
+
+	// Get total count
+	var totalItems int
+	countQuery := "SELECT COUNT(*) FROM contacts"
+	err := q.db.QueryRow(countQuery).Scan(&totalItems)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total count: %w", err)
+	}
+
+	// Get paginated contacts
+	query := `
+		SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode,
+		       rst_sent, rst_received, operator_name, qth, country, grid_square,
+		       power_watts, comment, confirmed, created_at, updated_at
+		FROM contacts
+		ORDER BY contact_date DESC, time_on DESC
+		LIMIT $1 OFFSET $2
+	`
+
+	rows, err := q.db.Query(query, pageSize, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []Contact
+	for rows.Next() {
+		var contact Contact
+		err := rows.Scan(
+			&contact.ID, &contact.Callsign, &contact.Date, &contact.TimeOn, &contact.TimeOff,
+			&contact.Frequency, &contact.Band, &contact.Mode, &contact.RSTSent, &contact.RSTReceived,
+			&contact.Name, &contact.QTH, &contact.Country, &contact.Grid, &contact.Power,
+			&contact.Comment, &contact.Confirmed, &contact.CreatedAt, &contact.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan contact: %w", err)
+		}
+		contacts = append(contacts, contact)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating contacts: %w", err)
+	}
+
+	totalPages := (totalItems + pageSize - 1) / pageSize
+
+	return &PaginationResult{
+		Contacts:   contacts,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalItems: totalItems,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// SearchContactsPaginated performs search with API filters and pagination
+func (q *QSOLogger) SearchContactsPaginated(filters SearchRequest) (*PaginationResult, error) {
+	page := filters.Page
+	pageSize := filters.PageSize
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 1000 {
+		pageSize = 20 // Default page size
+	}
+
+	offset := (page - 1) * pageSize
+
+	// Build base query with WHERE conditions
+	whereConditions := []string{"1=1"}
+	args := []interface{}{}
+
+	// Build dynamic WHERE clause
+	if filters.Search != "" {
+		whereConditions = append(whereConditions, fmt.Sprintf("(LOWER(callsign) LIKE LOWER($%d) OR LOWER(operator_name) LIKE LOWER($%d) OR LOWER(qth) LIKE LOWER($%d) OR LOWER(country) LIKE LOWER($%d))", len(args)+1, len(args)+1, len(args)+1, len(args)+1))
+		args = append(args, "%"+filters.Search+"%")
+	}
+
+	if filters.DateFrom != "" {
+		whereConditions = append(whereConditions, fmt.Sprintf("contact_date >= $%d", len(args)+1))
+		args = append(args, filters.DateFrom)
+	}
+
+	if filters.DateTo != "" {
+		whereConditions = append(whereConditions, fmt.Sprintf("contact_date <= $%d", len(args)+1))
+		args = append(args, filters.DateTo)
+	}
+
+	if filters.Band != "" {
+		whereConditions = append(whereConditions, fmt.Sprintf("LOWER(band) = LOWER($%d)", len(args)+1))
+		args = append(args, filters.Band)
+	}
+
+	if filters.Mode != "" {
+		whereConditions = append(whereConditions, fmt.Sprintf("LOWER(mode) = LOWER($%d)", len(args)+1))
+		args = append(args, filters.Mode)
+	}
+
+	if filters.Country != "" {
+		whereConditions = append(whereConditions, fmt.Sprintf("LOWER(country) LIKE LOWER($%d)", len(args)+1))
+		args = append(args, "%"+filters.Country+"%")
+	}
+
+	if filters.FreqMin > 0 {
+		whereConditions = append(whereConditions, fmt.Sprintf("frequency >= $%d", len(args)+1))
+		args = append(args, filters.FreqMin)
+	}
+
+	if filters.FreqMax > 0 {
+		whereConditions = append(whereConditions, fmt.Sprintf("frequency <= $%d", len(args)+1))
+		args = append(args, filters.FreqMax)
+	}
+
+	whereClause := strings.Join(whereConditions, " AND ")
+
+	// Get total count
+	var totalItems int
+	countQuery := "SELECT COUNT(*) FROM contacts WHERE " + whereClause
+	err := q.db.QueryRow(countQuery, args...).Scan(&totalItems)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get total count: %w", err)
+	}
+
+	// Build the main query with proper parameter placeholders
+	limitPlaceholder := len(args) + 1
+	offsetPlaceholder := len(args) + 2
+
+	// #nosec G202 - This is safe because we only concatenate static SQL parts and parameterized placeholders, no user input
+	query := "SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode, " +
+		"rst_sent, rst_received, operator_name, qth, country, grid_square, " +
+		"power_watts, comment, confirmed, created_at, updated_at " +
+		"FROM contacts WHERE " + whereClause + " " +
+		"ORDER BY contact_date DESC, time_on DESC " +
+		"LIMIT $" + fmt.Sprintf("%d", limitPlaceholder) + " OFFSET $" + fmt.Sprintf("%d", offsetPlaceholder)
+
+	args = append(args, pageSize, offset)
+
+	rows, err := q.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []Contact
+	for rows.Next() {
+		var contact Contact
+		err := rows.Scan(
+			&contact.ID, &contact.Callsign, &contact.Date, &contact.TimeOn, &contact.TimeOff,
+			&contact.Frequency, &contact.Band, &contact.Mode, &contact.RSTSent, &contact.RSTReceived,
+			&contact.Name, &contact.QTH, &contact.Country, &contact.Grid, &contact.Power,
+			&contact.Comment, &contact.Confirmed, &contact.CreatedAt, &contact.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan contact: %w", err)
+		}
+		contacts = append(contacts, contact)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating contacts: %w", err)
+	}
+
+	totalPages := (totalItems + pageSize - 1) / pageSize
+
+	return &PaginationResult{
+		Contacts:   contacts,
+		Page:       page,
+		PageSize:   pageSize,
+		TotalItems: totalItems,
+		TotalPages: totalPages,
+	}, nil
+}

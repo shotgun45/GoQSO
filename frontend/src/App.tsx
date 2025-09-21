@@ -1,26 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Contact, NewContact, SearchFilters, Statistics as StatsType } from './types';
+import { Contact, NewContact, SearchFilters, Statistics as StatsType, ImportResult, PaginatedResponse } from './types';
 import { qsoApi, downloadFile } from './api';
 import ContactList from './components/ContactList.tsx';
 import ContactForm from './components/ContactForm.tsx';
 import SearchForm from './components/SearchForm.tsx';
 import Statistics from './components/Statistics.tsx';
+import ImportForm from './components/ImportForm.tsx';
 import { 
   Radio, 
   Plus, 
   Search, 
   BarChart3, 
   Download,
-  RefreshCw 
+  RefreshCw,
+  Upload
 } from 'lucide-react';
 import './App.css';
 
 function App() {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
+  const [contactsData, setContactsData] = useState<PaginatedResponse<Contact> | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [isSearchMode, setIsSearchMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats' | 'import'>('list');
   const [editingContact, setEditingContact] = useState<Contact | undefined>(undefined);
 
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
@@ -29,16 +33,16 @@ function App() {
 
   // Load contacts on component mount
   useEffect(() => {
-    loadContacts();
-  }, []);
+    loadContacts(currentPage, pageSize);
+  }, [currentPage, pageSize]);
 
-  const loadContacts = async () => {
+  const loadContacts = async (page: number = currentPage, size: number = pageSize) => {
     setLoading(true);
     setError(null);
+    setIsSearchMode(false);
     try {
-      const data = await qsoApi.getContacts();
-      setContacts(data);
-      setFilteredContacts(data);
+      const data = await qsoApi.getContacts(page, size);
+      setContactsData(data);
     } catch (err) {
       setError('Failed to load contacts: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
@@ -50,15 +54,16 @@ function App() {
     try {
       if (editingContact) {
         // Update existing contact
-        const updatedContact = await qsoApi.updateContact(editingContact.id, newContact);
-        setContacts(prev => prev.map(c => c.id === editingContact.id ? updatedContact : c));
-        setFilteredContacts(prev => prev.map(c => c.id === editingContact.id ? updatedContact : c));
+        await qsoApi.updateContact(editingContact.id, newContact);
         setEditingContact(undefined);
+        // Reload current page to reflect changes
+        await loadContacts(currentPage, pageSize);
       } else {
         // Create new contact
-        const contact = await qsoApi.createContact(newContact);
-        setContacts(prev => [contact, ...prev]);
-        setFilteredContacts(prev => [contact, ...prev]);
+        await qsoApi.createContact(newContact);
+        // Go to first page to see the new contact (assuming newest first)
+        setCurrentPage(1);
+        await loadContacts(1, pageSize);
       }
       setActiveTab('list');
       return editingContact ? 'updated' : 'created';
@@ -80,8 +85,12 @@ function App() {
   const handleDeleteContact = async (id: number) => {
     try {
       await qsoApi.deleteContact(id);
-      setContacts(prev => prev.filter(c => c.id !== id));
-      setFilteredContacts(prev => prev.filter(c => c.id !== id));
+      // Reload current page to reflect changes
+      if (isSearchMode) {
+        await handleSearch({ ...searchFilters, page: currentPage, page_size: pageSize });
+      } else {
+        await loadContacts(currentPage, pageSize);
+      }
     } catch (err) {
       setError('Failed to delete contact: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
@@ -89,9 +98,15 @@ function App() {
 
   const handleSearch = async (filters: SearchFilters) => {
     setLoading(true);
+    setIsSearchMode(true);
     try {
-      const results = await qsoApi.searchContacts(filters);
-      setFilteredContacts(results);
+      const filtersWithPagination = {
+        ...filters,
+        page: filters.page || currentPage,
+        page_size: filters.page_size || pageSize,
+      };
+      const results = await qsoApi.searchContacts(filtersWithPagination);
+      setContactsData(results);
       setSearchFilters(filters);
     } catch (err) {
       setError('Failed to search contacts: ' + (err instanceof Error ? err.message : 'Unknown error'));
@@ -107,7 +122,35 @@ function App() {
 
   const handleClearFilters = () => {
     setSearchFilters({});
-    setFilteredContacts(contacts);
+    setCurrentPage(1);
+    loadContacts(1, pageSize);
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    if (isSearchMode) {
+      handleSearch({ ...searchFilters, page, page_size: pageSize });
+    } else {
+      loadContacts(page, pageSize);
+    }
+  };
+
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setCurrentPage(1); // Reset to first page when changing page size
+    if (isSearchMode) {
+      handleSearch({ ...searchFilters, page: 1, page_size: newPageSize });
+    } else {
+      loadContacts(1, newPageSize);
+    }
+  };
+
+  const handleRefresh = () => {
+    if (isSearchMode) {
+      handleSearch({ ...searchFilters, page: currentPage, page_size: pageSize });
+    } else {
+      loadContacts(currentPage, pageSize);
+    }
   };
 
   const loadStatistics = async () => {
@@ -139,6 +182,20 @@ function App() {
     }
   };
 
+  const handleImportComplete = (result: ImportResult) => {
+    if (result.success) {
+      setError(null);
+      // Refresh contacts after successful import
+      loadContacts();
+      // Show success message
+      alert(`Import completed successfully!\n\nImported: ${result.imported_count} contacts\nSkipped: ${result.skipped_count} contacts\nErrors: ${result.error_count} contacts`);
+      // Switch back to list view
+      setActiveTab('list');
+    } else {
+      setError(`Import failed: ${result.message}\n${result.errors.join('\n')}`);
+    }
+  };
+
   const TabButton = ({ 
     tab, 
     icon: Icon, 
@@ -158,10 +215,10 @@ function App() {
           setEditingContact(undefined);
         }
       }}
-      className={`tab-button ${isActive ? 'active' : ''}`}
+      className={`sidebar-button ${isActive ? 'active' : ''}`}
     >
       <Icon size={20} />
-      {label}
+      <span>{label}</span>
     </button>
   );
 
@@ -174,7 +231,7 @@ function App() {
             <h1>GoQSO</h1>
           </div>
           <div className="header-actions">
-            <button onClick={loadContacts} className="refresh-btn" disabled={loading}>
+            <button onClick={handleRefresh} className="refresh-btn" disabled={loading}>
               <RefreshCw size={16} className={loading ? 'spinning' : ''} />
               Refresh
             </button>
@@ -186,75 +243,88 @@ function App() {
         </div>
       </header>
 
-      <nav className="navigation">
-        <TabButton tab="list" icon={Radio} label="QSO Log" isActive={activeTab === 'list'} />
-        <TabButton tab="add" icon={Plus} label={editingContact ? "Edit QSO" : "Add QSO"} isActive={activeTab === 'add'} />
-        <TabButton tab="search" icon={Search} label="Search" isActive={activeTab === 'search'} />
-        <TabButton tab="stats" icon={BarChart3} label="Statistics" isActive={activeTab === 'stats'} />
-      </nav>
-
-      <main className="main-content">
-        {error && (
-          <div className="error-message">
-            {error}
-            <button onClick={() => setError(null)}>×</button>
+      <div className="app-body">
+        <nav className="sidebar">
+          <div className="sidebar-nav">
+            <TabButton tab="list" icon={Radio} label="QSO Log" isActive={activeTab === 'list'} />
+            <TabButton tab="add" icon={Plus} label={editingContact ? "Edit QSO" : "Add QSO"} isActive={activeTab === 'add'} />
+            <TabButton tab="search" icon={Search} label="Search" isActive={activeTab === 'search'} />
+            <TabButton tab="stats" icon={BarChart3} label="Statistics" isActive={activeTab === 'stats'} />
+            <TabButton tab="import" icon={Upload} label="Import" isActive={activeTab === 'import'} />
           </div>
-        )}
+        </nav>
 
-        {activeTab === 'list' && (
-          <ContactList 
-            contacts={filteredContacts} 
-            loading={loading}
-            onDelete={handleDeleteContact}
-            onEdit={handleEditContact}
-          />
-        )}
+        <main className="main-content">
+          {error && (
+            <div className="error-message">
+              {error}
+              <button onClick={() => setError(null)}>×</button>
+            </div>
+          )}
 
-        {activeTab === 'add' && (
-          <ContactForm 
-            onSave={handleAddContact} 
-            onCancel={handleCancelEdit}
-            editingContact={editingContact}
-          />
-        )}
-
-        {activeTab === 'search' && (
-          <div>
-            <SearchForm 
-              filters={searchFilters}
-              onFiltersChange={handleFiltersChange}
-              onClearFilters={handleClearFilters}
-              totalContacts={contacts.length}
-              filteredContacts={filteredContacts.length}
-            />
+          {activeTab === 'list' && (
             <ContactList 
-              contacts={filteredContacts} 
+              data={contactsData}
               loading={loading}
               onDelete={handleDeleteContact}
               onEdit={handleEditContact}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
             />
-          </div>
-        )}
+          )}
 
-        {activeTab === 'stats' && (
-          <Statistics 
-            statistics={statistics || {
-              total_qsos: 0,
-              unique_callsigns: 0,
-              unique_countries: 0,
-              confirmed_qsos: 0,
-              qsos_by_band: {},
-              qsos_by_mode: {},
-              qsos_by_country: {},
-              bands_worked: {},
-              modes_used: {},
-              countries_worked: {},
-              date_range: { earliest: '', latest: '' }
-            }}
-            loading={statsLoading}
-          />
-        )}
-      </main>
+          {activeTab === 'add' && (
+            <ContactForm 
+              onSave={handleAddContact} 
+              onCancel={handleCancelEdit}
+              editingContact={editingContact}
+            />
+          )}
+
+          {activeTab === 'search' && (
+            <div>
+              <SearchForm 
+                filters={searchFilters}
+                onFiltersChange={handleFiltersChange}
+                onClearFilters={handleClearFilters}
+                totalContacts={contactsData?.total_items || 0}
+                filteredContacts={contactsData?.total_items || 0}
+              />
+              <ContactList 
+                data={contactsData}
+                loading={loading}
+                onDelete={handleDeleteContact}
+                onEdit={handleEditContact}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+              />
+            </div>
+          )}
+
+          {activeTab === 'stats' && (
+            <Statistics 
+              statistics={statistics || {
+                total_qsos: 0,
+                unique_callsigns: 0,
+                unique_countries: 0,
+                confirmed_qsos: 0,
+                qsos_by_band: {},
+                qsos_by_mode: {},
+                qsos_by_country: {},
+                bands_worked: {},
+                modes_used: {},
+                countries_worked: {},
+                date_range: { earliest: '', latest: '' }
+              }}
+              loading={statsLoading}
+            />
+          )}
+
+          {activeTab === 'import' && (
+            <ImportForm onImportComplete={handleImportComplete} />
+          )}
+        </main>
+      </div>
     </div>
   );
 }

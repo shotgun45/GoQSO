@@ -52,6 +52,11 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
     return timeString;
   };
 
+  const getCurrentDateUTC = () => {
+    const now = new Date();
+    return now.toISOString().split('T')[0]; // Get YYYY-MM-DD in UTC
+  };
+
   const getInitialFormData = (): NewContact => {
     if (editingContact) {
       return {
@@ -77,15 +82,15 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
     return {
       callsign: '',
       operator_name: '',
-      contact_date: new Date().toISOString().split('T')[0], // Today's date
+      contact_date: getCurrentDateUTC(), // Today's date in UTC
       time_on: '',
       time_off: '',
       frequency: 0,
       band: '',
       mode: '',
-      power_watts: 100,
-      rst_sent: '59',
-      rst_received: '59',
+      power_watts: 0,
+      rst_sent: '',
+      rst_received: '',
       qth: '',
       country: '',
       grid_square: '',
@@ -181,7 +186,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
 
   const getCurrentTime = () => {
     const now = new Date();
-    return now.toTimeString().slice(0, 5); // HH:MM format
+    return now.toISOString().slice(11, 16); // Get HH:MM in UTC format
   };
 
   return (
@@ -225,7 +230,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
 
         <div className="form-row">
           <div className="form-group">
-            <label htmlFor="contact_date">Date *</label>
+            <label htmlFor="contact_date">Date (UTC) *</label>
             <input
               id="contact_date"
               type="date"
@@ -375,7 +380,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
               max="1500"
               value={formData.power_watts || ''}
               onChange={(e) => handleInputChange('power_watts', parseInt(e.target.value) || 0)}
-              placeholder="100"
+              placeholder="Enter power in watts"
               disabled={loading}
             />
           </div>

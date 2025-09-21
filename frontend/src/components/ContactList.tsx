@@ -1,16 +1,26 @@
 import React from 'react';
-import { Contact } from '../types';
+import { Contact, PaginatedResponse } from '../types';
 import { Trash2, MapPin, Radio, Edit } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import Pagination from './Pagination';
 
 interface ContactListProps {
-  contacts: Contact[];
+  data: PaginatedResponse<Contact> | null;
   loading: boolean;
   onDelete: (id: number) => void;
   onEdit: (contact: Contact) => void;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
 }
 
-const ContactList: React.FC<ContactListProps> = ({ contacts, loading, onDelete, onEdit }) => {
+const ContactList: React.FC<ContactListProps> = ({ 
+  data, 
+  loading, 
+  onDelete, 
+  onEdit, 
+  onPageChange, 
+  onPageSizeChange 
+}) => {
   // Helper function to format time for display
   const formatTimeDisplay = (timeString: string): string => {
     if (!timeString) return '';
@@ -39,7 +49,7 @@ const ContactList: React.FC<ContactListProps> = ({ contacts, loading, onDelete, 
     );
   }
 
-  if (contacts.length === 0) {
+  if (!data || data.items.length === 0) {
     return (
       <div className="empty-state">
         <Radio size={48} className="empty-icon" />
@@ -48,6 +58,8 @@ const ContactList: React.FC<ContactListProps> = ({ contacts, loading, onDelete, 
       </div>
     );
   }
+
+  const contacts = data.items;
 
   const handleDelete = (contact: Contact) => {
     if (window.confirm(`Delete QSO with ${contact.callsign}?`)) {
@@ -58,11 +70,11 @@ const ContactList: React.FC<ContactListProps> = ({ contacts, loading, onDelete, 
   return (
     <div className="contact-list">
       <div className="contact-list-header">
-        <h2>QSO Log ({contacts.length} contacts)</h2>
+        <h2>QSO Log ({data.total_items} contacts)</h2>
       </div>
 
       <div className="contact-grid">
-        {contacts.map((contact) => (
+        {contacts.map((contact: Contact) => (
           <div key={contact.id} className="contact-card">
             <div className="contact-header">
               <div className="callsign-section">
@@ -175,6 +187,16 @@ const ContactList: React.FC<ContactListProps> = ({ contacts, loading, onDelete, 
           </div>
         ))}
       </div>
+
+      <Pagination
+        currentPage={data.page}
+        totalPages={data.total_pages}
+        pageSize={data.page_size}
+        totalItems={data.total_items}
+        onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
+        loading={loading}
+      />
     </div>
   );
 };

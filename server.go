@@ -20,6 +20,14 @@ type APIResponse struct {
 	Error   string      `json:"error,omitempty"`
 }
 
+type PaginatedResponse struct {
+	Items      interface{} `json:"items"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"page_size"`
+	TotalItems int         `json:"total_items"`
+	TotalPages int         `json:"total_pages"`
+}
+
 type ContactRequest struct {
 	Callsign     string  `json:"callsign"`
 	OperatorName string  `json:"operator_name"`
@@ -49,6 +57,35 @@ type SearchRequest struct {
 	FreqMin   float64 `json:"freq_min"`
 	FreqMax   float64 `json:"freq_max"`
 	Confirmed bool    `json:"confirmed"`
+	Page      int     `json:"page"`      // Current page (1-based)
+	PageSize  int     `json:"page_size"` // Items per page
+}
+
+type ImportOptions struct {
+	FileType        string `json:"file_type"`
+	MergeDuplicates bool   `json:"merge_duplicates"`
+	UpdateExisting  bool   `json:"update_existing"`
+}
+
+type ImportResult struct {
+	Success       bool     `json:"success"`
+	ImportedCount int      `json:"imported_count"`
+	SkippedCount  int      `json:"skipped_count"`
+	ErrorCount    int      `json:"error_count"`
+	Errors        []string `json:"errors"`
+	Message       string   `json:"message"`
+}
+
+type LotwCredentials struct {
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	StartDate string `json:"start_date,omitempty"`
+	EndDate   string `json:"end_date,omitempty"`
+}
+
+type LotwImportRequest struct {
+	Credentials LotwCredentials `json:"credentials"`
+	Options     ImportOptions   `json:"options"`
 }
 
 func enableCORS(next http.Handler) http.Handler {
@@ -77,6 +114,10 @@ func setupRoutes(logger *QSOLogger) *mux.Router {
 	// Statistics endpoint
 	api.HandleFunc("/statistics", handleGetStatistics(logger)).Methods("GET")
 
+	// Import endpoints
+	api.HandleFunc("/import/adif", handleImportADIF(logger)).Methods("POST")
+	api.HandleFunc("/import/lotw", handleImportLoTW(logger)).Methods("POST")
+
 	// Health check
 	api.HandleFunc("/health", handleHealthCheck).Methods("GET")
 
@@ -85,13 +126,42 @@ func setupRoutes(logger *QSOLogger) *mux.Router {
 
 func handleGetContacts(logger *QSOLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		contacts, err := logger.GetAllContacts()
+		// Parse pagination parameters from query string
+		pageStr := r.URL.Query().Get("page")
+		pageSizeStr := r.URL.Query().Get("page_size")
+
+		page := 1
+		pageSize := 20
+
+		if pageStr != "" {
+			if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+				page = p
+			}
+		}
+
+		if pageSizeStr != "" {
+			if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 1000 {
+				pageSize = ps
+			}
+		}
+
+		// Get paginated contacts
+		result, err := logger.GetContactsPaginated(page, pageSize)
 		if err != nil {
 			sendError(w, "Failed to retrieve contacts", http.StatusInternalServerError)
 			return
 		}
 
-		sendSuccess(w, contacts)
+		// Return paginated response
+		response := PaginatedResponse{
+			Items:      result.Contacts,
+			Page:       result.Page,
+			PageSize:   result.PageSize,
+			TotalItems: result.TotalItems,
+			TotalPages: result.TotalPages,
+		}
+
+		sendSuccess(w, response)
 	}
 }
 
@@ -253,13 +323,31 @@ func handleSearchContacts(logger *QSOLogger) http.HandlerFunc {
 			return
 		}
 
-		contacts, err := logger.SearchContactsAPI(req)
+		// Set default pagination if not provided
+		if req.Page <= 0 {
+			req.Page = 1
+		}
+		if req.PageSize <= 0 {
+			req.PageSize = 20
+		}
+
+		// Use paginated search
+		result, err := logger.SearchContactsPaginated(req)
 		if err != nil {
 			sendError(w, fmt.Sprintf("Search failed: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		sendSuccess(w, contacts)
+		// Return paginated response
+		response := PaginatedResponse{
+			Items:      result.Contacts,
+			Page:       result.Page,
+			PageSize:   result.PageSize,
+			TotalItems: result.TotalItems,
+			TotalPages: result.TotalPages,
+		}
+
+		sendSuccess(w, response)
 	}
 }
 
@@ -318,6 +406,130 @@ func sendError(w http.ResponseWriter, message string, status int) {
 		log.Printf("Failed to encode error response: %v", err)
 		// Can't call http.Error here since WriteHeader was already called
 		// Just log the error - the client will get the status code at least
+	}
+}
+
+// handleImportADIF handles ADIF file imports
+func handleImportADIF(logger *QSOLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Parse multipart form
+		err := r.ParseMultipartForm(10 << 20) // 10 MB max
+		if err != nil {
+			sendError(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
+
+		// Get the uploaded file
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			sendError(w, "No file provided", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		// Parse options
+		optionsStr := r.FormValue("options")
+		var options ImportOptions
+		if optionsStr != "" {
+			if err := json.Unmarshal([]byte(optionsStr), &options); err != nil {
+				sendError(w, "Invalid options format", http.StatusBadRequest)
+				return
+			}
+		}
+
+		// Parse ADIF file
+		parser := NewADIFParser()
+		records, err := parser.ParseADIF(file)
+		if err != nil {
+			sendError(w, fmt.Sprintf("Failed to parse ADIF file: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		// Import records into database
+		result := ImportResult{
+			Success:       true,
+			ImportedCount: 0,
+			SkippedCount:  0,
+			ErrorCount:    0,
+			Errors:        []string{},
+			Message:       fmt.Sprintf("Processing %d records from %s", len(records), header.Filename),
+		}
+
+		for _, record := range records {
+			contactReq := record.ConvertToContactRequest()
+
+			// Check for duplicates if merge_duplicates is enabled
+			if options.MergeDuplicates {
+				existing, err := findExistingContact(logger, contactReq.Callsign, contactReq.ContactDate, contactReq.TimeOn)
+				if err != nil {
+					result.ErrorCount++
+					result.Errors = append(result.Errors, fmt.Sprintf("Error checking for duplicate %s: %v", contactReq.Callsign, err))
+					continue
+				}
+
+				if existing != nil {
+					if options.UpdateExisting {
+						// Update existing contact
+						err = updateContact(logger, existing.ID, contactReq)
+						if err != nil {
+							result.ErrorCount++
+							result.Errors = append(result.Errors, fmt.Sprintf("Error updating %s: %v", contactReq.Callsign, err))
+						} else {
+							result.ImportedCount++
+						}
+					} else {
+						result.SkippedCount++
+					}
+					continue
+				}
+			}
+
+			// Create new contact
+			_, err := createContact(logger, contactReq)
+			if err != nil {
+				result.ErrorCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("Error creating %s: %v", contactReq.Callsign, err))
+			} else {
+				result.ImportedCount++
+			}
+		}
+
+		// Update final message
+		if result.ErrorCount == 0 {
+			result.Message = fmt.Sprintf("Successfully imported %d contacts from %s", result.ImportedCount, header.Filename)
+		} else {
+			result.Message = fmt.Sprintf("Imported %d contacts with %d errors from %s", result.ImportedCount, result.ErrorCount, header.Filename)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			log.Printf("Failed to encode import result: %v", err)
+		}
+	}
+}
+
+// handleImportLoTW handles Logbook of the World imports
+func handleImportLoTW(logger *QSOLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req LotwImportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			sendError(w, "Invalid request format", http.StatusBadRequest)
+			return
+		}
+
+		// Validate credentials
+		if req.Credentials.Username == "" || req.Credentials.Password == "" {
+			sendError(w, "Username and password are required", http.StatusBadRequest)
+			return
+		}
+
+		// Import from LoTW
+		result := ImportFromLoTW(logger, req.Credentials, req.Options)
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			log.Printf("Failed to encode import result: %v", err)
+		}
 	}
 }
 
