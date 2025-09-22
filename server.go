@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 )
+
+// Global variables
+var startTime = time.Now()
 
 // API response types
 type APIResponse struct {
@@ -120,6 +124,10 @@ func setupRoutes(logger *QSOLogger) *mux.Router {
 
 	// Health check
 	api.HandleFunc("/health", handleHealthCheck).Methods("GET")
+
+	// Admin endpoints
+	api.HandleFunc("/admin/system", handleAdminSystem(logger)).Methods("GET")
+	api.HandleFunc("/admin/merge-duplicates", handleMergeDuplicates(logger)).Methods("POST")
 
 	return r
 }
@@ -420,6 +428,66 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		"version": version,
 		"time":    time.Now().Format(time.RFC3339),
 	})
+}
+
+func handleAdminSystem(logger *QSOLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get contact count
+		contactCount, err := logger.GetContactCount()
+		if err != nil {
+			sendError(w, fmt.Sprintf("Failed to get contact count: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Get database size
+		dbSize, err := logger.GetDatabaseSize()
+		if err != nil {
+			sendError(w, fmt.Sprintf("Failed to get database size: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Get duplicate count
+		duplicateCount, err := logger.CountDuplicateContacts()
+		if err != nil {
+			sendError(w, fmt.Sprintf("Failed to get duplicate count: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Prepare system info
+		systemInfo := map[string]interface{}{
+			"application": map[string]interface{}{
+				"name":       "GoQSO",
+				"version":    version,
+				"go_version": runtime.Version(),
+				"start_time": startTime.Format(time.RFC3339),
+				"uptime":     time.Since(startTime).String(),
+			},
+			"database": map[string]interface{}{
+				"contact_count":   contactCount,
+				"database_size":   dbSize,
+				"duplicate_count": duplicateCount,
+			},
+		}
+
+		sendSuccess(w, systemInfo)
+	}
+}
+
+func handleMergeDuplicates(logger *QSOLogger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mergedCount, err := logger.MergeDuplicateContacts()
+		if err != nil {
+			sendError(w, fmt.Sprintf("Failed to merge duplicate contacts: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		result := map[string]interface{}{
+			"merged_count": mergedCount,
+			"message":      fmt.Sprintf("Successfully merged %d duplicate records", mergedCount),
+		}
+
+		sendSuccess(w, result)
+	}
 }
 
 func sendSuccess(w http.ResponseWriter, data interface{}) {
