@@ -57,9 +57,9 @@ check_port() {
 # Function to check PostgreSQL connectivity
 check_postgres() {
     if command -v psql &> /dev/null; then
-        if psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\q' 2>/dev/null; then
-            return 0
-        fi
+        # Use PGPASSWORD to avoid password prompt
+        PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\q' 2>/dev/null
+        return $?
     fi
     return 1
 }

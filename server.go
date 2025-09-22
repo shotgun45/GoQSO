@@ -458,8 +458,8 @@ func handleImportADIF(logger *QSOLogger) http.HandlerFunc {
 		for _, record := range records {
 			contactReq := record.ConvertToContactRequest()
 
-			// Check for duplicates if merge_duplicates is enabled
-			if options.MergeDuplicates {
+			// Check for duplicates if merge_duplicates OR update_existing is enabled
+			if options.MergeDuplicates || options.UpdateExisting {
 				existing, err := findExistingContact(logger, contactReq.Callsign, contactReq.ContactDate, contactReq.TimeOn)
 				if err != nil {
 					result.ErrorCount++
@@ -478,6 +478,7 @@ func handleImportADIF(logger *QSOLogger) http.HandlerFunc {
 							result.ImportedCount++
 						}
 					} else {
+						// MergeDuplicates is enabled but UpdateExisting is not, so skip
 						result.SkippedCount++
 					}
 					continue

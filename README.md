@@ -202,8 +202,6 @@ cd frontend
 npm run build
 ```
 
-## 📋 Migration Management
-
 ## 🤝 Contributing
 
 1. Fork the repository

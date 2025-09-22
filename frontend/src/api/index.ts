@@ -72,7 +72,7 @@ export const qsoApi = {
     }
     const data = response.data.data!;
     return {
-      items: data.items.map(transformContact),
+      items: (data.items || []).map(transformContact),
       page: data.page,
       page_size: data.page_size,
       total_items: data.total_items,
@@ -130,7 +130,7 @@ export const qsoApi = {
     }
     const data = response.data.data!;
     return {
-      items: data.items.map(transformContact),
+      items: (data.items || []).map(transformContact),
       page: data.page,
       page_size: data.page_size,
       total_items: data.total_items,
