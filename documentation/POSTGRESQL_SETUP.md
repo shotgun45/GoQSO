@@ -54,6 +54,10 @@ sudo -u postgres psql
 CREATE DATABASE goqso;
 CREATE USER goqso WITH PASSWORD 'your_password';
 GRANT ALL PRIVILEGES ON DATABASE goqso TO goqso;
+GRANT ALL ON SCHEMA public TO goqso;
+GRANT CREATE ON SCHEMA public TO goqso;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO goqso;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO goqso;
 
 -- For PostgreSQL 15+, you may also need:
 \c goqso
@@ -165,14 +169,6 @@ The application creates indexes for optimal query performance:
 - `idx_contacts_mode` - for mode statistics
 - `idx_contacts_country` - for country statistics
 - `idx_contacts_confirmed` - for QSL confirmation queries
-
-## Migration from JSON
-
-If you have existing QSO data in JSON format from the previous version:
-
-1. **Backup your JSON file**: Copy `qso_log.json` to a safe location
-2. **Start the new PostgreSQL version**: The database will be empty initially
-3. **Manual import** (if needed): You can write a simple import script or manually re-enter critical contacts
 
 ## Features
 

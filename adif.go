@@ -195,7 +195,7 @@ func (p *ADIFParser) parseRecord(recordStr string) (ADIFRecord, error) {
 			}
 		case "COMMENT":
 			record.Comment = fieldValue
-		case "QSL_RCVD":
+		case "QSL_RCVD", "CONFIRMED":
 			record.Confirmed = strings.ToUpper(fieldValue) == "Y"
 		}
 	}
