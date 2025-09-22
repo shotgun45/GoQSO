@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Contact, NewContact, SearchFilters, Statistics as StatsType, ImportResult, PaginatedResponse } from './types';
-import { qsoApi, downloadFile } from './api';
+import { qsoApi } from './api';
 import ContactList from './components/ContactList.tsx';
 import ContactForm from './components/ContactForm.tsx';
 import SearchForm from './components/SearchForm.tsx';
 import Statistics from './components/Statistics.tsx';
 import ImportForm from './components/ImportForm.tsx';
+import ExportForm from './components/ExportForm.tsx';
 import { 
   Radio, 
   Plus, 
@@ -24,7 +25,7 @@ function App() {
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats' | 'import'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats' | 'import' | 'export'>('list');
   const [editingContact, setEditingContact] = useState<Contact | undefined>(undefined);
 
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
@@ -172,16 +173,6 @@ function App() {
     }
   }, [activeTab, statistics]);
 
-  const handleExportADIF = async () => {
-    try {
-      const blob = await qsoApi.exportADIF();
-      const filename = `goqso_export_${new Date().toISOString().split('T')[0]}.adi`;
-      downloadFile(blob, filename);
-    } catch (err) {
-      setError('Failed to export ADIF: ' + (err instanceof Error ? err.message : 'Unknown error'));
-    }
-  };
-
   const handleImportComplete = (result: ImportResult) => {
     if (result.success) {
       setError(null);
@@ -235,10 +226,6 @@ function App() {
               <RefreshCw size={16} className={loading ? 'spinning' : ''} />
               Refresh
             </button>
-            <button onClick={handleExportADIF} className="export-btn">
-              <Download size={16} />
-              Export ADIF
-            </button>
           </div>
         </div>
       </header>
@@ -251,6 +238,7 @@ function App() {
             <TabButton tab="search" icon={Search} label="Search" isActive={activeTab === 'search'} />
             <TabButton tab="stats" icon={BarChart3} label="Statistics" isActive={activeTab === 'stats'} />
             <TabButton tab="import" icon={Upload} label="Import" isActive={activeTab === 'import'} />
+            <TabButton tab="export" icon={Download} label="Export" isActive={activeTab === 'export'} />
           </div>
         </nav>
 
@@ -322,6 +310,10 @@ function App() {
 
           {activeTab === 'import' && (
             <ImportForm onImportComplete={handleImportComplete} />
+          )}
+
+          {activeTab === 'export' && (
+            <ExportForm onError={setError} />
           )}
         </main>
       </div>

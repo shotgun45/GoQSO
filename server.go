@@ -353,12 +353,49 @@ func handleSearchContacts(logger *QSOLogger) http.HandlerFunc {
 
 func handleExportContacts(logger *QSOLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		filename := fmt.Sprintf("goqso_export_%s.adi", time.Now().Format("20060102_150405"))
+		// Parse query parameters for date filtering
+		startDateStr := r.URL.Query().Get("start_date")
+		endDateStr := r.URL.Query().Get("end_date")
+
+		var startDate, endDate *time.Time
+
+		if startDateStr != "" {
+			parsed, err := time.Parse("2006-01-02", startDateStr)
+			if err != nil {
+				sendError(w, fmt.Sprintf("Invalid start_date format: %v", err), http.StatusBadRequest)
+				return
+			}
+			startDate = &parsed
+		}
+
+		if endDateStr != "" {
+			parsed, err := time.Parse("2006-01-02", endDateStr)
+			if err != nil {
+				sendError(w, fmt.Sprintf("Invalid end_date format: %v", err), http.StatusBadRequest)
+				return
+			}
+			endDate = &parsed
+		}
+
+		// Generate filename with date range if specified
+		filename := "goqso_export"
+		if startDate != nil || endDate != nil {
+			if startDate != nil && endDate != nil {
+				filename += fmt.Sprintf("_%s_to_%s", startDate.Format("20060102"), endDate.Format("20060102"))
+			} else if startDate != nil {
+				filename += fmt.Sprintf("_from_%s", startDate.Format("20060102"))
+			} else if endDate != nil {
+				filename += fmt.Sprintf("_until_%s", endDate.Format("20060102"))
+			}
+		} else {
+			filename += fmt.Sprintf("_%s", time.Now().Format("20060102_150405"))
+		}
+		filename += ".adi"
 
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 
-		if err := logger.ExportADIFToWriter(w); err != nil {
+		if err := logger.ExportADIFToWriterFiltered(w, startDate, endDate); err != nil {
 			sendError(w, fmt.Sprintf("Export failed: %v", err), http.StatusInternalServerError)
 			return
 		}

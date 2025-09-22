@@ -154,8 +154,12 @@ export const qsoApi = {
   },
 
   // Export ADIF
-  exportADIF: async (): Promise<Blob> => {
-    const response = await api.get('/contacts/export', {
+  exportADIF: async (startDate?: string, endDate?: string): Promise<Blob> => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    
+    const response = await api.get(`/contacts/export${params.toString() ? '?' + params.toString() : ''}`, {
       responseType: 'blob',
     });
     return response.data;
