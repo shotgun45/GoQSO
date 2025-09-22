@@ -7,6 +7,7 @@ import SearchForm from './components/SearchForm.tsx';
 import Statistics from './components/Statistics.tsx';
 import ImportForm from './components/ImportForm.tsx';
 import ExportForm from './components/ExportForm.tsx';
+import AdminPage from './components/AdminPage.tsx';
 import { 
   Radio, 
   Plus, 
@@ -14,7 +15,8 @@ import {
   BarChart3, 
   Download,
   RefreshCw,
-  Upload
+  Upload,
+  Settings
 } from 'lucide-react';
 import './App.css';
 
@@ -25,7 +27,7 @@ function App() {
   const [isSearchMode, setIsSearchMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats' | 'import' | 'export'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'add' | 'search' | 'stats' | 'import' | 'export' | 'admin'>('list');
   const [editingContact, setEditingContact] = useState<Contact | undefined>(undefined);
 
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
@@ -239,6 +241,7 @@ function App() {
             <TabButton tab="stats" icon={BarChart3} label="Statistics" isActive={activeTab === 'stats'} />
             <TabButton tab="import" icon={Upload} label="Import" isActive={activeTab === 'import'} />
             <TabButton tab="export" icon={Download} label="Export" isActive={activeTab === 'export'} />
+            <TabButton tab="admin" icon={Settings} label="Admin" isActive={activeTab === 'admin'} />
           </div>
         </nav>
 
@@ -314,6 +317,10 @@ function App() {
 
           {activeTab === 'export' && (
             <ExportForm onError={setError} />
+          )}
+
+          {activeTab === 'admin' && (
+            <AdminPage onError={setError} />
           )}
         </main>
       </div>

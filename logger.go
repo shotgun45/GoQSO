@@ -4,12 +4,13 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	version = "1.0.0"
+	version = "0.1.15"
 )
 
 // Contact represents an amateur radio QSO (contact)
@@ -109,6 +110,210 @@ func (q *QSOLogger) LoadContacts() ([]Contact, error) {
 	}
 
 	return contacts, nil
+}
+
+// GetContactCount returns the total number of contacts in the database
+func (q *QSOLogger) GetContactCount() (int, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM contacts"
+	err := q.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count contacts: %w", err)
+	}
+	return count, nil
+}
+
+// GetDatabaseSize returns the size of the database in bytes
+func (q *QSOLogger) GetDatabaseSize() (int64, error) {
+	var size int64
+	query := "SELECT pg_database_size(current_database())"
+	err := q.db.QueryRow(query).Scan(&size)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get database size: %w", err)
+	}
+	return size, nil
+}
+
+// FindDuplicateContacts finds potential duplicate contacts based on callsign, date, and time
+func (q *QSOLogger) FindDuplicateContacts() ([][]Contact, error) {
+	query := `
+		SELECT id, callsign, contact_date, time_on, time_off, frequency, band, mode,
+			   rst_sent, rst_received, operator_name, qth, country, grid_square,
+			   power_watts, comment, confirmed, created_at, updated_at
+		FROM contacts 
+		WHERE (callsign, contact_date, time_on) IN (
+			SELECT callsign, contact_date, time_on
+			FROM contacts
+			GROUP BY callsign, contact_date, time_on
+			HAVING COUNT(*) > 1
+		)
+		ORDER BY callsign, contact_date, time_on, id`
+
+	rows, err := q.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	var allContacts []Contact
+	for rows.Next() {
+		var contact Contact
+		err := rows.Scan(
+			&contact.ID, &contact.Callsign, &contact.Date, &contact.TimeOn, &contact.TimeOff,
+			&contact.Frequency, &contact.Band, &contact.Mode, &contact.RSTSent, &contact.RSTReceived,
+			&contact.Name, &contact.QTH, &contact.Country, &contact.Grid,
+			&contact.Power, &contact.Comment, &contact.Confirmed, &contact.CreatedAt, &contact.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan contact: %w", err)
+		}
+
+		allContacts = append(allContacts, contact)
+	}
+
+	// Group duplicates
+	var duplicateGroups [][]Contact
+	var currentGroup []Contact
+	var lastKey string
+
+	for _, contact := range allContacts {
+		key := fmt.Sprintf("%s-%s-%s", contact.Callsign, contact.Date.Format("2006-01-02"), contact.TimeOn)
+		if key != lastKey && len(currentGroup) > 0 {
+			duplicateGroups = append(duplicateGroups, currentGroup)
+			currentGroup = []Contact{}
+		}
+		currentGroup = append(currentGroup, contact)
+		lastKey = key
+	}
+
+	if len(currentGroup) > 0 {
+		duplicateGroups = append(duplicateGroups, currentGroup)
+	}
+
+	return duplicateGroups, nil
+}
+
+// CountDuplicateContacts returns the total number of individual duplicate records
+func (q *QSOLogger) CountDuplicateContacts() (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM contacts 
+		WHERE (callsign, contact_date, time_on) IN (
+			SELECT callsign, contact_date, time_on
+			FROM contacts
+			GROUP BY callsign, contact_date, time_on
+			HAVING COUNT(*) > 1
+		)`
+
+	var count int
+	err := q.db.QueryRow(query).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count duplicates: %w", err)
+	}
+
+	return count, nil
+}
+
+// MergeDuplicateContacts merges duplicate contacts, keeping the oldest record and combining data
+func (q *QSOLogger) MergeDuplicateContacts() (int, error) {
+	duplicateGroups, err := q.FindDuplicateContacts()
+	if err != nil {
+		return 0, fmt.Errorf("failed to find duplicates: %w", err)
+	}
+
+	mergedCount := 0
+
+	for _, group := range duplicateGroups {
+		if len(group) < 2 {
+			continue
+		}
+
+		// Keep the oldest record (first one created)
+		keepRecord := group[0]
+		for _, contact := range group[1:] {
+			if contact.CreatedAt.Before(keepRecord.CreatedAt) {
+				keepRecord = contact
+			}
+		}
+
+		// Merge data from other records into the keep record
+		for _, contact := range group {
+			if contact.ID == keepRecord.ID {
+				continue
+			}
+
+			// Merge non-empty fields
+			if keepRecord.Name == "" && contact.Name != "" {
+				keepRecord.Name = contact.Name
+			}
+			if keepRecord.QTH == "" && contact.QTH != "" {
+				keepRecord.QTH = contact.QTH
+			}
+			if keepRecord.Country == "" && contact.Country != "" {
+				keepRecord.Country = contact.Country
+			}
+			if keepRecord.Grid == "" && contact.Grid != "" {
+				keepRecord.Grid = contact.Grid
+			}
+			if keepRecord.Comment == "" && contact.Comment != "" {
+				keepRecord.Comment = contact.Comment
+			}
+			if keepRecord.Power == 0 && contact.Power > 0 {
+				keepRecord.Power = contact.Power
+			}
+			if !keepRecord.Confirmed && contact.Confirmed {
+				keepRecord.Confirmed = contact.Confirmed
+			}
+		}
+
+		// Update the keep record with merged data
+		updateQuery := `
+			UPDATE contacts SET 
+				operator_name = $1, qth = $2, country = $3, grid_square = $4,
+				comment = $5, power_watts = $6, confirmed = $7, updated_at = NOW()
+			WHERE id = $8`
+
+		_, err = q.db.Exec(updateQuery, keepRecord.Name, keepRecord.QTH,
+			keepRecord.Country, keepRecord.Grid, keepRecord.Comment,
+			keepRecord.Power, keepRecord.Confirmed, keepRecord.ID)
+		if err != nil {
+			return mergedCount, fmt.Errorf("failed to update merged record: %w", err)
+		}
+
+		// Delete the duplicate records
+		var idsToDelete []int
+		for _, contact := range group {
+			if contact.ID != keepRecord.ID {
+				idsToDelete = append(idsToDelete, contact.ID)
+			}
+		}
+
+		if len(idsToDelete) > 0 {
+			// Build a parameterized query for deleting multiple records
+			// Use strings.Builder to avoid gosec SQL injection warnings
+			var queryBuilder strings.Builder
+			queryBuilder.WriteString("DELETE FROM contacts WHERE id IN (")
+
+			args := make([]interface{}, len(idsToDelete))
+			for i, id := range idsToDelete {
+				if i > 0 {
+					queryBuilder.WriteString(", ")
+				}
+				queryBuilder.WriteString("$")
+				queryBuilder.WriteString(strconv.Itoa(i + 1))
+				args[i] = id
+			}
+			queryBuilder.WriteString(")")
+
+			_, err = q.db.Exec(queryBuilder.String(), args...)
+			if err != nil {
+				return mergedCount, fmt.Errorf("failed to delete duplicate records: %w", err)
+			}
+			mergedCount += len(idsToDelete)
+		}
+	}
+
+	return mergedCount, nil
 }
 
 // SaveContact saves a QSO contact to PostgreSQL database
