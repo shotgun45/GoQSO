@@ -24,7 +24,7 @@ A comprehensive amateur radio contact logging application featuring a modern Rea
 
 ### Prerequisites
 - **Go 1.23+** - Backend server and CLI tools
-- **Node.js 18+** - Frontend development and build tools
+- **Node.js 20.19+** - Frontend development and build tools (Vite requirement)
 - **PostgreSQL** (optional) - Database backend (can run without for development)
 
 ### Development Setup
