@@ -1,4 +1,4 @@
-package main
+package goqso
 
 // frequencyToBand converts frequency in MHz to amateur radio band
 func frequencyToBand(freq float64) string {

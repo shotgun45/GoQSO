@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 
+	goqso "goqso/internal"
+
 	"github.com/joho/godotenv"
 )
 
@@ -13,5 +15,5 @@ func main() {
 	}
 
 	// Start the web server
-	startServer()
+	goqso.StartServer()
 }

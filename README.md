@@ -141,7 +141,7 @@ GoQSO/
 
 GoQSO uses PostgreSQL with automatic schema migrations powered by [Goose](https://github.com/pressly/goose).
 
-For detailed database setup instructions, see [POSTGRESQL_SETUP.md](./documentation/POSTGRESQL_SETUP.md).
+For detailed database setup instructions, see [POSTGRESQL_SETUP.md](./docs/POSTGRESQL_SETUP.md).
 
 ### Environment Variables
 

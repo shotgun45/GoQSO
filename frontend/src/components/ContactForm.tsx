@@ -186,7 +186,7 @@ const ContactForm: React.FC<ContactFormProps> = ({ onSave, onCancel, loading = f
 
   const getCurrentTime = () => {
     const now = new Date();
-    return now.toISOString().slice(11, 16); // Get HH:MM in UTC format
+    return now.toISOString().slice(11, 19); // Get HH:MM:SS in UTC format
   };
 
   return (

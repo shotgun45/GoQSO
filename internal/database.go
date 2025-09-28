@@ -1,4 +1,4 @@
-package main
+package goqso
 
 import (
 	"database/sql"
