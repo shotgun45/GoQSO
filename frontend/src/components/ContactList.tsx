@@ -78,7 +78,16 @@ const ContactList: React.FC<ContactListProps> = ({
           <div key={contact.id} className="contact-card">
             <div className="contact-header">
               <div className="callsign-section">
-                <h3 className="callsign">{contact.callsign}</h3>
+                <h3 className="callsign">
+                  <a 
+                    href={`https://www.qrz.com/db/${contact.callsign}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="callsign-link"
+                  >
+                    {contact.callsign}
+                  </a>
+                </h3>
                 {contact.operator_name && (
                   <span className="operator-name">{contact.operator_name}</span>
                 )}
