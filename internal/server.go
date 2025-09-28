@@ -1,4 +1,4 @@
-package main
+package goqso
 
 import (
 	"encoding/json"
@@ -639,7 +639,7 @@ func handleImportLoTW(logger *QSOLogger) http.HandlerFunc {
 	}
 }
 
-func startServer() {
+func StartServer() {
 	logger, err := NewQSOLogger()
 	if err != nil {
 		log.Fatalf("Failed to initialize QSO logger: %v", err)
