@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Contact, PaginatedResponse } from '../types';
-import { Trash2, MapPin, Radio, Edit } from 'lucide-react';
+import { Trash2, MapPin, Radio, Edit, Grid3X3, List } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import Pagination from './Pagination';
 
@@ -21,6 +21,8 @@ const ContactList: React.FC<ContactListProps> = ({
   onPageChange, 
   onPageSizeChange 
 }) => {
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+
   // Helper function to format time for display
   const formatTimeDisplay = (timeString: string): string => {
     if (!timeString) return '';
@@ -71,11 +73,28 @@ const ContactList: React.FC<ContactListProps> = ({
     <div className="contact-list">
       <div className="contact-list-header">
         <h2>QSO Log ({data.total_items} contacts)</h2>
+        <div className="view-toggle">
+          <button
+            onClick={() => setViewMode('card')}
+            className={`view-toggle-btn ${viewMode === 'card' ? 'active' : ''}`}
+            title="Card View"
+          >
+            <Grid3X3 size={18} />
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+            title="List View"
+          >
+            <List size={18} />
+          </button>
+        </div>
       </div>
 
-      <div className="contact-grid">
-        {contacts.map((contact: Contact) => (
-          <div key={contact.id} className="contact-card">
+      {viewMode === 'card' ? (
+        <div className="contact-grid">
+          {contacts.map((contact: Contact) => (
+            <div key={contact.id} className="contact-card">
             <div className="contact-header">
               <div className="callsign-section">
                 <h3 className="callsign">
@@ -193,9 +212,86 @@ const ContactList: React.FC<ContactListProps> = ({
                 Added {formatDistanceToNow(new Date(contact.created_at))} ago
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="contact-table-container">
+          <table className="contact-table">
+            <thead>
+              <tr>
+                <th>Callsign</th>
+                <th>Date</th>
+                <th>Time (UTC)</th>
+                <th>Freq/Band</th>
+                <th>Mode</th>
+                <th>RST</th>
+                <th>QTH</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contacts.map((contact: Contact) => (
+                <tr key={contact.id} className="contact-row">
+                  <td className="callsign-cell">
+                    <div className="callsign-info">
+                      <a 
+                        href={`https://www.qrz.com/db/${contact.callsign}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="callsign-link"
+                      >
+                        {contact.callsign}
+                      </a>
+                      {contact.operator_name && (
+                        <div className="operator-name-small">{contact.operator_name}</div>
+                      )}
+                    </div>
+                  </td>
+                  <td>{new Date(contact.contact_date).toLocaleDateString()}</td>
+                  <td>
+                    {formatTimeDisplay(contact.time_on)}
+                    {contact.time_off && ` - ${formatTimeDisplay(contact.time_off)}`}
+                  </td>
+                  <td>
+                    <div className="freq-info">
+                      <div>{contact.frequency.toFixed(3)} MHz</div>
+                      <div className="band-small">{contact.band}</div>
+                    </div>
+                  </td>
+                  <td>{contact.mode}</td>
+                  <td>{contact.rst_sent} / {contact.rst_received}</td>
+                  <td>
+                    <div className="location-info">
+                      {contact.qth && <div>{contact.qth}</div>}
+                      {contact.country && <div className="country-small">{contact.country}</div>}
+                      {contact.grid_square && <div className="grid-small">{contact.grid_square}</div>}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="table-actions">
+                      <button
+                        onClick={() => onEdit(contact)}
+                        className="edit-btn-small"
+                        title="Edit QSO"
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(contact)}
+                        className="delete-btn-small"
+                        title="Delete QSO"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <Pagination
         currentPage={data.page}
